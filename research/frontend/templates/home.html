@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+{% from "components/badge.html" import badge %}
+
+{% block title %}Research{% endblock %}
+
+{% block content %}
+<div x-data="{
+    filter: localStorage.getItem('rcs_entity_filter') ? JSON.parse(localStorage.getItem('rcs_entity_filter')).type : null,
+    entities: [],
+    get filtered() {
+        if (!this.filter) return this.entities;
+        return this.entities.filter(e => e.entity_type === this.filter);
+    },
+    setFilter(type) {
+        this.filter = type;
+        localStorage.setItem('rcs_entity_filter', JSON.stringify({type: type, sort: 'recency'}));
+        this.loadEntities();
+    },
+    async loadEntities() {
+        const url = this.filter ? '/api/entities?type=' + this.filter : '/api/entities';
+        const resp = await fetch(url);
+        this.entities = await resp.json();
+    },
+    entityUrl(e) {
+        const map = {canvas:'/canvas/', thesis:'/thesis/', observation:'/observation/', setup:'/setup/', trade:'/trade/', review:'/review/'};
+        return map[e.entity_type] + e.id;
+    },
+    entityLayer(e) {
+        const map = {canvas:'analytical', thesis:'analytical', observation:'analytical', setup:'operational', trade:'operational', review:'learning'};
+        return map[e.entity_type];
+    },
+    formatLinks(e) {
+        const l = e.links;
+        switch(e.entity_type) {
+            case 'canvas': return (l.thesis_count || 0) + ' theses, ' + (l.observation_backlink_count || 0) + ' obs';
+            case 'thesis': return (l.linked_canvas_names || 'none') + (l.has_active_trade ? ' · trade' : '');
+            case 'observation': return l.linked_canvas_name || 'none';
+            case 'setup': return l.linked_thesis_name || 'none';
+            case 'trade': return l.thesis_instrument + (l.has_review ? ' · reviewed' : '');
+            case 'review': return l.trade_instrument + ' · ' + l.phase_indicator;
+            default: return '';
+        }
+    }
+}" x-init="loadEntities()">
+
+    <!-- Page header -->
+    <h1 style="font-family: var(--font-ui); font-size: var(--text-xl); font-weight: 500; margin-bottom: var(--space-4)">
+        Research
+    </h1>
+
+    <!-- Filter chips -->
+    <div style="display: flex; flex-wrap: wrap; gap: var(--space-1); margin-bottom: var(--space-6)">
+        <button class="nav-chip" :class="{ 'active': filter === null }" @click="setFilter(null)">all</button>
+        <button class="nav-chip" :class="{ 'active': filter === 'canvas' }" @click="setFilter('canvas')">canvas</button>
+        <button class="nav-chip" :class="{ 'active': filter === 'thesis' }" @click="setFilter('thesis')">thesis</button>
+        <button class="nav-chip" :class="{ 'active': filter === 'observation' }" @click="setFilter('observation')">observation</button>
+        <button class="nav-chip" :class="{ 'active': filter === 'setup' }" @click="setFilter('setup')">setup</button>
+        <button class="nav-chip" :class="{ 'active': filter === 'trade' }" @click="setFilter('trade')">trade</button>
+        <button class="nav-chip" :class="{ 'active': filter === 'review' }" @click="setFilter('review')">review</button>
+    </div>
+
+    <!-- Entity table -->
+    <template x-if="filtered.length === 0">
+        <div style="font-family: var(--font-ui); font-size: var(--text-base); color: var(--color-text-tertiary); padding: var(--space-8) 0">
+            <p x-show="entities.length === 0">Nothing here yet. Use + to create your first entity.</p>
+            <p x-show="entities.length > 0" x-text="'No ' + (filter || '') + ' entities found.'"></p>
+        </div>
+    </template>
+
+    <template x-if="filtered.length > 0">
+        <table class="table-container">
+            <thead>
+                <tr>
+                    <th>Type</th>
+                    <th>Name / Instrument</th>
+                    <th>Status</th>
+                    <th>Last updated</th>
+                    <th>Links</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                <template x-for="e in filtered" :key="e.id">
+                    <tr class="navigable" @click="window.location = entityUrl(e)">
+                        <td>
+                            <span class="badge" :data-status="e.entity_type" x-text="e.entity_type"></span>
+                        </td>
+                        <td style="font-family: var(--font-ui); font-size: var(--text-sm); font-weight: 500" x-text="e.display_name"></td>
+                        <td>
+                            <span class="badge" :data-status="e.status" x-text="e.status"></span>
+                        </td>
+                        <td style="font-family: var(--font-data); font-size: var(--text-xs); color: var(--color-text-secondary)" x-text="e.last_updated"></td>
+                        <td style="font-family: var(--font-ui); font-size: var(--text-xs); color: var(--color-text-secondary)" x-text="formatLinks(e)"></td>
+                        <td @click.stop style="text-align: right">
+                            <button
+                                style="background: none; border: none; color: var(--color-text-tertiary); cursor: pointer; font-size: var(--text-base); padding: 2px 6px; border-radius: 4px"
+                                @mouseenter="$el.style.color = 'var(--color-danger, #e05)'"
+                                @mouseleave="$el.style.color = 'var(--color-text-tertiary)'"
+                                @click.stop="if (confirm('Delete this ' + e.entity_type + '?')) {
+                                    fetch('/api/entities/' + e.entity_type + '/' + e.id, {method: 'DELETE'})
+                                        .then(r => r.ok ? entities = entities.filter(x => x.id !== e.id) : r.json().then(d => alert(d.detail || 'Delete failed')));
+                                }"
+                                title="Delete">×</button>
+                        </td>
+                    </tr>
+                </template>
+            </tbody>
+        </table>
+    </template>
+
+</div>
+{% endblock %}

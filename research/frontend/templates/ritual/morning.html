@@ -1,0 +1,176 @@
+{% extends "base.html" %}
+{% from "components/badge.html" import badge %}
+{% from "components/table.html" import table_headers, table_row %}
+
+{% block title %}Morning ritual{% endblock %}
+
+{% block content %}
+<div x-data="{
+    stalenessComplete: false,
+    positionsComplete: false,
+    actionsComplete: false,
+    get ritualComplete() { return this.stalenessComplete && this.positionsComplete && this.actionsComplete }
+}">
+
+    <!-- Page header -->
+    <h1 style="font-family: var(--font-ui); font-size: var(--text-xl); font-weight: 500; margin-bottom: var(--space-1)">
+        Morning ritual
+    </h1>
+    <div style="font-family: var(--font-data); font-size: var(--text-sm); color: var(--color-text-secondary); margin-bottom: var(--space-8)">
+        {{ today }}
+    </div>
+
+    <!-- ── Section 1: Staleness sweep ──────────────────────────── -->
+    <div class="card" x-show="!stalenessComplete">
+        <div style="display: flex; align-items: center; gap: var(--space-2); margin-bottom: var(--space-3)">
+            <div class="section-header" style="margin: 0">Staleness</div>
+            {% if not stale_items %}
+            <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--color-active)"></span>
+            {% endif %}
+        </div>
+
+        {% if stale_items %}
+        <table class="table-container">
+            {{ table_headers(columns=["Entity", "Name", "Days stale", "Action"]) }}
+            <tbody>
+                {% for item in stale_items %}
+                <tr class="{% if item.days_stale > 21 %}row-danger{% elif item.days_stale > 14 %}row-warning{% endif %}">
+                    <td>
+                        <span class="badge" data-status="{{ item.entity_type }}">{{ item.entity_type }}</span>
+                    </td>
+                    <td style="font-family: var(--font-ui); font-size: var(--text-sm)">{{ item.name }}</td>
+                    <td style="font-family: var(--font-data); font-size: var(--text-sm);
+                        {% if item.days_stale > 21 %}color: var(--color-danger)
+                        {% elif item.days_stale > 14 %}color: var(--color-warning)
+                        {% endif %}">
+                        {{ item.days_stale }}d
+                    </td>
+                    <td>
+                        <button class="btn btn-ghost btn-compact"
+                                hx-post="/ritual/morning/staleness/{{ item.entity_type }}/{{ item.id }}"
+                                hx-swap="outerHTML"
+                                hx-target="closest tr">Confirm</button>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <div style="font-family: var(--font-ui); font-size: var(--text-sm); color: var(--color-text-tertiary); padding: var(--space-3) 0">
+            No staleness flags.
+        </div>
+        {% endif %}
+
+        {% if not stale_items %}
+        <script>document.querySelector('[x-data]').__x.$data.stalenessComplete = true;</script>
+        {% endif %}
+    </div>
+
+    <!-- Collapsed staleness summary -->
+    <div class="card" x-show="stalenessComplete" style="display: none; padding: var(--space-2) var(--space-4)">
+        <div style="display: flex; align-items: center; gap: var(--space-2)">
+            <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--color-active)"></span>
+            <span style="font-family: var(--font-ui); font-size: var(--text-sm); color: var(--color-active)">Staleness complete</span>
+        </div>
+    </div>
+
+    <!-- ── Section 2: Active position check ────────────────────── -->
+    <div class="card" x-show="!positionsComplete" x-data="{ positions: {{ active_theses | tojson }} }">
+        <div style="display: flex; align-items: center; gap: var(--space-2); margin-bottom: var(--space-3)">
+            <div class="section-header" style="margin: 0">Positions</div>
+            {% if not active_theses %}
+            <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--color-active)"></span>
+            {% endif %}
+        </div>
+
+        {% if active_theses %}
+        <table class="table-container">
+            {{ table_headers(columns=["Instrument", "Status", "Kill conditions", "Updated", ""]) }}
+            <tbody>
+                {% for t in active_theses %}
+                <tr>
+                    <td style="font-family: var(--font-data); font-size: var(--text-sm)">{{ t.instrument }}</td>
+                    <td>{{ badge(status=t.status) }}</td>
+                    <td style="font-family: var(--font-data); font-size: var(--text-sm)">
+                        <span{% if t.fired_kills %} style="color: var(--color-danger)"{% endif %}>
+                            {{ t.total_kills }} ({{ t.unfired_macro + t.unfired_technical }} unfired)
+                        </span>
+                    </td>
+                    <td style="font-family: var(--font-data); font-size: var(--text-xs); color: var(--color-text-secondary)">{{ t.last_updated }}</td>
+                    <td style="display: flex; gap: var(--space-2)">
+                        <button class="btn btn-ghost btn-compact"
+                                hx-post="/ritual/morning/position/{{ t.id }}/clear"
+                                hx-swap="none">All clear</button>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <div style="font-family: var(--font-ui); font-size: var(--text-sm); color: var(--color-text-tertiary); padding: var(--space-3) 0">
+            No active positions.
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Collapsed positions summary -->
+    <div class="card" x-show="positionsComplete" style="display: none; padding: var(--space-2) var(--space-4)">
+        <div style="display: flex; align-items: center; gap: var(--space-2)">
+            <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--color-active)"></span>
+            <span style="font-family: var(--font-ui); font-size: var(--text-sm); color: var(--color-active)">Positions complete</span>
+        </div>
+    </div>
+
+    <!-- ── Section 3: Action dispatch ──────────────────────────── -->
+    <div class="card" x-show="!actionsComplete" x-data="{ actions: {{ overdue_actions | tojson }} }">
+        <div style="display: flex; align-items: center; gap: var(--space-2); margin-bottom: var(--space-3)">
+            <div class="section-header" style="margin: 0">Actions</div>
+            {% if not overdue_actions %}
+            <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--color-active)"></span>
+            {% endif %}
+        </div>
+
+        {% if overdue_actions %}
+        <table class="table-container">
+            {{ table_headers(columns=["Action", "Due", "Linked", ""]) }}
+            <tbody>
+                {% for a in overdue_actions %}
+                <tr class="row-danger" id="action-row-{{ a.id }}">
+                    <td style="font-family: var(--font-ui); font-size: var(--text-sm)">{{ a.action }}</td>
+                    <td style="font-family: var(--font-data); font-size: var(--text-xs)">{{ a.due_date }}</td>
+                    <td style="font-family: var(--font-data); font-size: var(--text-xs); color: var(--color-text-secondary)">{{ a.linked_thesis_id or '' }}</td>
+                    <td>
+                        <button class="btn btn-ghost btn-compact"
+                                hx-patch="/action/{{ a.id }}/done"
+                                hx-swap="none"
+                                onclick="let row = document.getElementById('action-row-{{ a.id }}'); row.classList.add('row-done'); setTimeout(() => row.remove(), 150)">Done</button>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <div style="font-family: var(--font-ui); font-size: var(--text-sm); color: var(--color-text-tertiary); padding: var(--space-3) 0">
+            No overdue actions.
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Collapsed actions summary -->
+    <div class="card" x-show="actionsComplete" style="display: none; padding: var(--space-2) var(--space-4)">
+        <div style="display: flex; align-items: center; gap: var(--space-2)">
+            <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--color-active)"></span>
+            <span style="font-family: var(--font-ui); font-size: var(--text-sm); color: var(--color-active)">Actions complete</span>
+        </div>
+    </div>
+
+    <!-- ── Ritual complete ─────────────────────────────────────── -->
+    <div x-show="ritualComplete" style="display: none; padding: var(--space-4) 0">
+        <div style="display: flex; align-items: center; gap: var(--space-2)">
+            <span style="display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: var(--color-active)"></span>
+            <span style="font-family: var(--font-ui); font-size: var(--text-base); color: var(--color-active)">Ritual complete</span>
+        </div>
+    </div>
+
+</div>
+{% endblock %}

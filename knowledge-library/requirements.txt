@@ -1,0 +1,7 @@
+pdfplumber
+pytesseract
+ebooklib
+chromadb
+sentence-transformers
+pyyaml
+ollama

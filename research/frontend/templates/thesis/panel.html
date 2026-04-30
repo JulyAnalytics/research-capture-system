@@ -1,0 +1,74 @@
+{# thesis/panel.html — HTMX partial for right context panel on thesis detail.
+   Rendered by GET /thesis/{id}/panel.
+   Design spec section 5 (panel sections for thesis). #}
+
+{% from "components/badge.html" import badge %}
+{% from "components/chip.html" import chip %}
+
+<!-- Linked canvases -->
+<div class="panel-section">
+    <div class="panel-section-header">Linked canvases</div>
+    <div class="panel-section-content">
+        {% if linked_canvases %}
+            {% for c in linked_canvases %}
+            <div style="margin-bottom: 6px">
+                {{ chip(label=c.name, layer="analytical", href="/canvas/" ~ c.canvas_id, badge_status=c.status) }}
+            </div>
+            {% endfor %}
+        {% else %}
+            <span style="color: var(--color-text-tertiary)">No linked canvases.</span>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Linked setups -->
+<div class="panel-section">
+    <div class="panel-section-header">Linked setups</div>
+    <div class="panel-section-content">
+        {% if linked_setups %}
+            {% for s in linked_setups %}
+            <div style="margin-bottom: 6px">
+                {{ chip(label=s.instrument ~ " (" ~ s.setup_type ~ ")", layer="operational", href="/setup/" ~ s.setup_id, badge_status=s.status) }}
+            </div>
+            {% endfor %}
+        {% else %}
+            <span style="color: var(--color-text-tertiary)">No linked setups.</span>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Protocol flags -->
+<div class="panel-section">
+    <div class="panel-section-header">Protocol flags</div>
+    <div class="panel-section-content">
+        {% if protocol_flags %}
+            {% for flag in protocol_flags %}
+            <div style="margin-bottom: 6px; font-family: var(--font-ui); font-size: var(--text-sm); color: var(--color-warning)">
+                {{ flag }}
+            </div>
+            {% endfor %}
+        {% else %}
+            <span style="color: var(--color-text-tertiary)">No active protocol flags.</span>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Version history -->
+<div class="panel-section" x-data="{ expanded: false }">
+    <div class="panel-section-header" style="cursor: pointer; display: flex; justify-content: space-between; align-items: center" @click="expanded = !expanded">
+        <span>Version history</span>
+        <span x-text="expanded ? '−' : '+'" style="font-size: 12px"></span>
+    </div>
+    <div class="panel-section-content" x-show="expanded" x-transition>
+        {% if version_history %}
+            {% for v in version_history %}
+            <div style="margin-bottom: 8px">
+                <div style="font-family: var(--font-data); font-size: var(--text-xs); color: var(--color-text-secondary)">{{ v.timestamp }}</div>
+                <div style="font-family: var(--font-ui); font-size: var(--text-xs); color: var(--color-text-primary)">{{ v.diff_summary }}</div>
+            </div>
+            {% endfor %}
+        {% else %}
+            <span style="color: var(--color-text-tertiary)">No version history.</span>
+        {% endif %}
+    </div>
+</div>

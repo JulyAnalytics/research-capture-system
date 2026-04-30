@@ -1,0 +1,224 @@
+{% extends "base.html" %}
+{% from "components/badge.html" import badge %}
+{% from "components/chip.html" import chip %}
+{% from "components/prose_field.html" import editable %}
+{% from "components/inline_form.html" import inline_form %}
+
+{% block title %}Canvas / {{ canvas.name }}{% endblock %}
+
+{% block content %}
+<div x-data="{
+    showAddCC: false,
+    showAddIC: false,
+    protocol1: null,
+    showProtocol1: false
+}">
+
+    <!-- Back button (change spec Task 011 delta) -->
+    <button onclick="history.back()" class="btn-ghost btn-compact" style="margin-bottom: var(--space-2); color: var(--color-text-secondary)">← Back</button>
+
+    <!-- Protocol 1 banner (appears when canvas update affects theses) -->
+    <template x-if="protocol1">
+        <div class="protocol-banner protocol-banner-1 protocol-banner-enter">
+            <span class="protocol-banner-label">Protocol 1 —</span>
+            <span x-text="protocol1.action_required"></span>
+            <button class="btn-ghost" style="color: var(--color-warning); margin-left: auto" @click="showProtocol1 = false">Dismiss</button>
+        </div>
+    </template>
+
+    <!-- Breadcrumb -->
+    <div style="font-family: var(--font-ui); font-size: var(--text-sm); color: var(--color-text-secondary); margin-bottom: var(--space-4)">
+        <span>Canvas</span> <span style="margin: 0 6px">/</span>
+        <span style="color: var(--color-text-primary); font-weight: 500">{{ canvas.name }}</span>
+    </div>
+
+    <!-- Entity identity bar -->
+    <div style="display: flex; align-items: center; gap: var(--space-4); margin-bottom: var(--space-6); padding-left: 12px; border-left: 3px solid var(--color-analytical)">
+        <h1 style="font-family: var(--font-ui); font-size: var(--text-xl); font-weight: 500; margin: 0">{{ canvas.name }}</h1>
+        {{ badge(status=canvas.status) }}
+
+        {% if days_since_reviewed > 14 %}
+        <span style="font-family: var(--font-data); font-size: var(--text-sm); color: var(--color-warning)">
+            last reviewed {{ days_since_reviewed }}d ago
+        </span>
+        {% endif %}
+
+        <div style="margin-left: auto">
+            <button class="btn btn-primary btn-compact"
+                    hx-patch="{{ '/canvas/%s/reviewed' % canvas.id }}"
+                    hx-swap="none"
+                    onclick="this.textContent='Reviewed'">Confirm reviewed</button>
+        </div>
+    </div>
+
+    <!-- ── Narrative section ──────────────────────────────────── -->
+    <div class="section-header">Narrative</div>
+    {{ editable(
+        id="canvas-narrative",
+        content=canvas.narrative,
+        save_url="/canvas/%s" % canvas.id,
+        require_diff=True
+    ) }}
+
+    <!-- ── Cross-currents section ─────────────────────────────── -->
+    <div class="section-header">Cross-currents</div>
+
+    <div id="cross-currents-list">
+        {% for cc in cross_currents %}
+        <div style="display: flex; align-items: center; gap: var(--space-3); padding: var(--space-2) 0; border-bottom: 1px solid var(--color-border-light)"
+             id="cc-{{ cc.id }}">
+            {{ chip(label=cc.target_name, layer="analytical", href="/canvas/" ~ cc.target_canvas_id) }}
+            <span style="font-family: var(--font-ui); font-size: var(--text-sm); color: var(--color-text-secondary)">{{ cc.relationship_description }}</span>
+            <button class="btn-ghost" style="margin-left: auto; color: var(--color-text-tertiary); font-size: 14px"
+                    hx-delete="{{ '/canvas/%s/cross-currents/%s' % (canvas.id, cc.target_canvas_id) }}"
+                    hx-target="#cc-{{ cc.id }}"
+                    hx-swap="outerHTML swap:0.15s"
+                    onclick="this.closest('[id]').style.opacity='0'">×</button>
+        </div>
+        {% endfor %}
+    </div>
+
+    <!-- Add cross-current -->
+    <div x-show="!showAddCC" style="color: var(--color-text-tertiary); cursor: pointer; padding: var(--space-2) 0; font-size: var(--text-sm)"
+         @click="showAddCC = true">+ Add cross-current</div>
+
+    <div x-show="showAddCC" x-transition>
+        {% call inline_form(id="add-cc-form") %}
+        <div style="display: flex; gap: var(--space-3); align-items: flex-end; flex-wrap: wrap">
+            <div style="flex: 1; min-width: 200px">
+                <label style="font-family: var(--font-ui); font-size: var(--text-xs); color: var(--color-text-secondary); display: block; margin-bottom: 4px">Target canvas</label>
+                <input type="text" class="form-input" placeholder="Search canvases..." id="cc-typeahead"
+                       hx-get="/canvas/search" hx-trigger="input changed delay:300ms" hx-target="#cc-search-results" hx-vals='js:{q: this.value}'>
+                <div id="cc-search-results" style="margin-top: 4px"></div>
+            </div>
+            <div style="flex: 2; min-width: 250px">
+                <label style="font-family: var(--font-ui); font-size: var(--text-xs); color: var(--color-text-secondary); display: block; margin-bottom: 4px">Relationship description</label>
+                <input type="text" class="form-input" id="cc-relationship" placeholder="How are they related?">
+            </div>
+            <div style="display: flex; gap: var(--space-2)">
+                <button class="btn btn-primary btn-compact" @click="
+                    const target = document.getElementById('cc-typeahead').dataset.selectedId;
+                    const rel = document.getElementById('cc-relationship').value;
+                    if (!target || !rel) return;
+                    fetch('{{ '/canvas/%s/cross-currents' % canvas.id }}', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({target_canvas_id: target, relationship_description: rel})
+                    }).then(r => { if (r.ok) location.reload(); });
+                ">Save</button>
+                <button class="btn-ghost btn-compact" @click="showAddCC = false">Cancel</button>
+            </div>
+        </div>
+        {% endcall %}
+    </div>
+
+    <!-- ── Source documents section (only if library configured) ─ -->
+    {% if library_configured %}
+    <div class="section-header">Source documents</div>
+    <div style="font-family: var(--font-ui); font-size: var(--text-sm); color: var(--color-text-tertiary); padding: var(--space-2) 0">
+        Source document linking will be available after library integration (Task 015).
+    </div>
+    {% endif %}
+
+    <!-- ── Invalidation conditions section ────────────────────── -->
+    <div class="section-header">Invalidation conditions</div>
+
+    {% if invalidation_conditions %}
+    <table class="table-container" style="margin-bottom: var(--space-2)">
+        <thead>
+            <tr>
+                <th>Condition</th>
+                <th>Type</th>
+                <th>Probability</th>
+                <th>Lead time</th>
+                <th>Last assessed</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for ic in invalidation_conditions %}
+            <tr class="{% if ic.days_since_assessed > 21 %}row-danger{% elif ic.days_since_assessed > 14 %}row-warning{% endif %}">
+                <td style="font-family: var(--font-ui); font-size: var(--text-sm)">{{ ic.condition }}</td>
+                <td>{{ badge(status=ic.type) }}</td>
+                <td>{{ badge(status=ic.probability) }}</td>
+                <td style="font-family: var(--font-data); font-size: var(--text-sm)">{{ ic.lead_time_days }}d</td>
+                <td style="font-family: var(--font-data); font-size: var(--text-xs);
+                    {% if ic.days_since_assessed > 21 %}color: var(--color-danger){% endif %}">
+                    {{ ic.last_assessed }}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <div style="font-family: var(--font-ui); font-size: var(--text-sm); color: var(--color-text-tertiary); padding: var(--space-2) 0">
+        No invalidation conditions defined.
+    </div>
+    {% endif %}
+
+    <!-- Add invalidation condition -->
+    <div x-show="!showAddIC" style="color: var(--color-text-tertiary); cursor: pointer; padding: var(--space-2) 0; font-size: var(--text-sm)"
+         @click="showAddIC = true">+ Add condition</div>
+
+    <div x-show="showAddIC" x-transition>
+        {% call inline_form(id="add-ic-form") %}
+        <form hx-post="{{ '/canvas/%s/invalidation-conditions' % canvas.id }}" hx-swap="none" hx-on::after-request="location.reload()">
+            <div style="display: flex; gap: var(--space-3); align-items: flex-end; flex-wrap: wrap">
+                <div style="flex: 2; min-width: 200px">
+                    <label style="font-family: var(--font-ui); font-size: var(--text-xs); color: var(--color-text-secondary); display: block; margin-bottom: 4px">Condition</label>
+                    <input type="text" class="form-input" name="condition" required>
+                </div>
+                <div style="flex: 0; min-width: 120px">
+                    <label style="font-family: var(--font-ui); font-size: var(--text-xs); color: var(--color-text-secondary); display: block; margin-bottom: 4px">Type</label>
+                    <select class="form-select" name="type">
+                        <option value="necessary">Necessary</option>
+                        <option value="sufficient">Sufficient</option>
+                    </select>
+                </div>
+                <div style="flex: 0; min-width: 100px">
+                    <label style="font-family: var(--font-ui); font-size: var(--text-xs); color: var(--color-text-secondary); display: block; margin-bottom: 4px">Probability</label>
+                    <select class="form-select" name="probability">
+                        <option value="low">Low</option>
+                        <option value="medium">Medium</option>
+                        <option value="high">High</option>
+                    </select>
+                </div>
+                <div style="flex: 0; min-width: 80px">
+                    <label style="font-family: var(--font-ui); font-size: var(--text-xs); color: var(--color-text-secondary); display: block; margin-bottom: 4px">Lead (days)</label>
+                    <input type="number" class="form-input" name="lead_time_days" value="30" min="0">
+                </div>
+                <div style="flex: 0; min-width: 140px">
+                    <label style="font-family: var(--font-ui); font-size: var(--text-xs); color: var(--color-text-secondary); display: block; margin-bottom: 4px">Last assessed</label>
+                    <input type="text" class="form-input" name="last_assessed" value="{{ now_iso }}">
+                </div>
+                <div style="display: flex; gap: var(--space-2)">
+                    <button type="submit" class="btn btn-primary btn-compact">Save</button>
+                    <button type="button" class="btn-ghost btn-compact" @click="showAddIC = false">Cancel</button>
+                </div>
+            </div>
+        </form>
+        {% endcall %}
+    </div>
+
+</div>
+{% endblock %}
+
+
+{% block panel %}
+<!-- Right context panel — loaded via HTMX -->
+<div class="panel-right" id="context-panel"
+     hx-get="/canvas/{{ canvas.id }}/panel"
+     hx-trigger="load"
+     hx-target="#context-panel"
+     hx-swap="innerHTML">
+</div>
+
+<script>
+    // Show panel on canvas detail
+    document.querySelector('.main-content').classList.add('panel-open');
+    document.addEventListener('htmx:afterRequest', function(e) {
+        if (e.detail.pathInfo && e.detail.pathInfo.requestPath.includes('/panel')) {
+            document.getElementById('context-panel').classList.add('visible');
+        }
+    });
+</script>
+{% endblock %}

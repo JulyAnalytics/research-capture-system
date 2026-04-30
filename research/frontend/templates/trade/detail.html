@@ -1,0 +1,279 @@
+{% extends "base.html" %}
+{% from "components/badge.html" import badge %}
+{% from "components/chip.html" import chip %}
+{% from "components/prose_field.html" import readonly %}
+{% from "components/inline_form.html" import inline_form %}
+{% from "components/protocol_banner.html" import protocol_banner %}
+
+{% block title %}Trade / {{ trade.instrument_type }}{% endblock %}
+
+{% block content %}
+<div x-data="{
+    showAddEntry: false,
+    showAddExit: false
+}">
+
+    <!-- Back button (change spec Task 013 delta) -->
+    <button onclick="history.back()" class="btn-ghost btn-compact" style="margin-bottom: var(--space-2); color: var(--color-text-secondary)">← Back</button>
+
+    <!-- Protocol banners -->
+    {% for flag in protocol4_flags %}
+    {{ protocol_banner(4, "Trade closed — review required.", action_url="/review/new?trade_id=" ~ trade.id, action_text="File review →") }}
+    {% endfor %}
+
+    <!-- Breadcrumb -->
+    <div style="font-family: var(--font-ui); font-size: var(--text-sm); color: var(--color-text-secondary); margin-bottom: var(--space-4)">
+        <span>Trade</span> <span style="margin: 0 6px">/</span>
+        <span style="color: var(--color-text-primary); font-weight: 500">{{ trade.instrument_type }}</span>
+    </div>
+
+    <!-- Entity identity bar -->
+    <div style="display: flex; align-items: center; gap: var(--space-4); margin-bottom: var(--space-6); padding-left: 12px; border-left: 3px solid var(--color-operational)">
+        <h1 style="font-family: var(--font-ui); font-size: var(--text-xl); font-weight: 500; margin: 0">{{ trade.instrument_type }}</h1>
+        {{ badge(status=trade.status) }}
+        <span style="font-family: var(--font-data); font-size: var(--text-sm); color: var(--color-text-secondary)">{{ trade.created_at }}</span>
+
+        <div style="margin-left: auto; display: flex; gap: var(--space-2)">
+            {% if trade.status == 'open' %}
+            <button class="btn btn-danger btn-compact" onclick="
+                if (confirm('Close this trade?')) {
+                    fetch('{{ '/trade/%s/close' % trade.id }}', {method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify({})}).then(r => { if(r.ok) location.reload(); });
+                }
+            ">Close trade</button>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- ── Linked thesis ─────────────────────────────────────────────── -->
+    <div class="section-header">Thesis</div>
+    {% if thesis %}
+    {{ chip(label=thesis.instrument, layer="analytical", href="/thesis/" ~ thesis.id, badge_status=thesis.status) }}
+    {% else %}
+    <div style="font-family: var(--font-ui); font-size: var(--text-sm); color: var(--color-text-tertiary)">No linked thesis.</div>
+    {% endif %}
+
+    <!-- ── Frozen fields ─────────────────────────────────────────────── -->
+    <div class="section-header" style="margin-top: var(--space-6)">Rules</div>
+    <div style="margin-bottom: var(--space-3)">
+        <div style="font-family: var(--font-ui); font-size: var(--text-xs); color: var(--color-text-tertiary); text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: var(--space-1)">Entry rules</div>
+        {{ readonly(content=trade.entry_rules_stated, frozen_label="Frozen at open") }}
+    </div>
+    <div style="margin-bottom: var(--space-3)">
+        <div style="font-family: var(--font-ui); font-size: var(--text-xs); color: var(--color-text-tertiary); text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: var(--space-1)">Exit rules</div>
+        {{ readonly(content=trade.exit_rules_stated, frozen_label="Frozen at open") }}
+    </div>
+    <div style="margin-bottom: var(--space-3)">
+        <div style="font-family: var(--font-ui); font-size: var(--text-xs); color: var(--color-text-tertiary); text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: var(--space-1)">Thesis snapshot</div>
+        {{ readonly(content=trade.thesis_snapshot, frozen_label="Frozen at open") }}
+    </div>
+
+    <!-- ── Entries (append-only) ─────────────────────────────────────── -->
+    <div class="section-header" style="margin-top: var(--space-6)">Entries</div>
+
+    {% if entries %}
+    <table class="table-container" style="margin-bottom: var(--space-2)">
+        <thead>
+            <tr>
+                <th>Date</th>
+                <th>Price</th>
+                <th>Size</th>
+                <th>Note</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for e in entries %}
+            <tr>
+                <td style="font-family: var(--font-data); font-size: var(--text-sm); color: var(--color-text-secondary)">{{ e.date }}</td>
+                <td style="font-family: var(--font-data); font-size: var(--text-sm); color: var(--color-text-secondary)">{{ e.price }}</td>
+                <td style="font-family: var(--font-data); font-size: var(--text-sm); color: var(--color-text-secondary)">{{ e.size }}</td>
+                <td style="font-family: var(--font-ui); font-size: var(--text-sm); color: var(--color-text-secondary)">{{ e.note or '' }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% endif %}
+
+    {% if trade.status == 'open' %}
+    <div x-show="!showAddEntry" style="color: var(--color-text-tertiary); cursor: pointer; padding: var(--space-2) 0; font-size: var(--text-sm)"
+         @click="showAddEntry = true">+ Add entry</div>
+
+    <div x-show="showAddEntry" x-transition>
+        {% call inline_form(id="add-entry-form") %}
+        <div style="display: flex; gap: var(--space-3); align-items: flex-end; flex-wrap: wrap">
+            <div style="flex: 0; min-width: 120px">
+                <label style="font-family: var(--font-ui); font-size: var(--text-xs); color: var(--color-text-secondary); display: block; margin-bottom: 4px">Date</label>
+                <input type="text" class="form-input" id="entry-date" value="{{ now_date }}">
+            </div>
+            <div style="flex: 0; min-width: 100px">
+                <label style="font-family: var(--font-ui); font-size: var(--text-xs); color: var(--color-text-secondary); display: block; margin-bottom: 4px">Price</label>
+                <input type="number" class="form-input" id="entry-price" step="0.01">
+            </div>
+            <div style="flex: 0; min-width: 80px">
+                <label style="font-family: var(--font-ui); font-size: var(--text-xs); color: var(--color-text-secondary); display: block; margin-bottom: 4px">Size</label>
+                <input type="number" class="form-input" id="entry-size" step="0.01">
+            </div>
+            <div style="flex: 2; min-width: 150px">
+                <label style="font-family: var(--font-ui); font-size: var(--text-xs); color: var(--color-text-secondary); display: block; margin-bottom: 4px">Note</label>
+                <input type="text" class="form-input" id="entry-note" placeholder="Optional">
+            </div>
+            <div style="display: flex; gap: var(--space-2)">
+                <button class="btn btn-primary btn-compact" @click="
+                    const date = document.getElementById('entry-date').value;
+                    const price = parseFloat(document.getElementById('entry-price').value);
+                    const size = parseFloat(document.getElementById('entry-size').value);
+                    const note = document.getElementById('entry-note').value || null;
+                    if (!date || isNaN(price) || isNaN(size)) return;
+                    fetch('{{ '/trade/%s/entries' % trade.id }}', {
+                        method: 'POST', headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({date, price, size, note})
+                    }).then(r => { if (r.ok) location.reload(); });
+                ">Save</button>
+                <button class="btn-ghost btn-compact" @click="showAddEntry = false">Cancel</button>
+            </div>
+        </div>
+        {% endcall %}
+    </div>
+    {% endif %}
+
+    <!-- ── Exits (append-only) ───────────────────────────────────────── -->
+    <div class="section-header" style="margin-top: var(--space-6)">Exits</div>
+
+    {% if exits %}
+    <table class="table-container" style="margin-bottom: var(--space-2)">
+        <thead>
+            <tr>
+                <th>Date</th>
+                <th>Price</th>
+                <th>Size</th>
+                <th>Note</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for e in exits %}
+            <tr>
+                <td style="font-family: var(--font-data); font-size: var(--text-sm); color: var(--color-text-secondary)">{{ e.date }}</td>
+                <td style="font-family: var(--font-data); font-size: var(--text-sm); color: var(--color-text-secondary)">{{ e.price }}</td>
+                <td style="font-family: var(--font-data); font-size: var(--text-sm); color: var(--color-text-secondary)">{{ e.size }}</td>
+                <td style="font-family: var(--font-ui); font-size: var(--text-sm); color: var(--color-text-secondary)">{{ e.note or '' }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% endif %}
+
+    {% if trade.status == 'open' %}
+    <div x-show="!showAddExit" style="color: var(--color-text-tertiary); cursor: pointer; padding: var(--space-2) 0; font-size: var(--text-sm)"
+         @click="showAddExit = true">+ Add exit</div>
+
+    <div x-show="showAddExit" x-transition>
+        {% call inline_form(id="add-exit-form") %}
+        <div style="display: flex; gap: var(--space-3); align-items: flex-end; flex-wrap: wrap">
+            <div style="flex: 0; min-width: 120px">
+                <label style="font-family: var(--font-ui); font-size: var(--text-xs); color: var(--color-text-secondary); display: block; margin-bottom: 4px">Date</label>
+                <input type="text" class="form-input" id="exit-date" value="{{ now_date }}">
+            </div>
+            <div style="flex: 0; min-width: 100px">
+                <label style="font-family: var(--font-ui); font-size: var(--text-xs); color: var(--color-text-secondary); display: block; margin-bottom: 4px">Price</label>
+                <input type="number" class="form-input" id="exit-price" step="0.01">
+            </div>
+            <div style="flex: 0; min-width: 80px">
+                <label style="font-family: var(--font-ui); font-size: var(--text-xs); color: var(--color-text-secondary); display: block; margin-bottom: 4px">Size</label>
+                <input type="number" class="form-input" id="exit-size" step="0.01">
+            </div>
+            <div style="flex: 2; min-width: 150px">
+                <label style="font-family: var(--font-ui); font-size: var(--text-xs); color: var(--color-text-secondary); display: block; margin-bottom: 4px">Note</label>
+                <input type="text" class="form-input" id="exit-note" placeholder="Optional">
+            </div>
+            <div style="display: flex; gap: var(--space-2)">
+                <button class="btn btn-primary btn-compact" @click="
+                    const date = document.getElementById('exit-date').value;
+                    const price = parseFloat(document.getElementById('exit-price').value);
+                    const size = parseFloat(document.getElementById('exit-size').value);
+                    const note = document.getElementById('exit-note').value || null;
+                    if (!date || isNaN(price) || isNaN(size)) return;
+                    fetch('{{ '/trade/%s/exits' % trade.id }}', {
+                        method: 'POST', headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({date, price, size, note})
+                    }).then(r => { if (r.ok) location.reload(); });
+                ">Save</button>
+                <button class="btn-ghost btn-compact" @click="showAddExit = false">Cancel</button>
+            </div>
+        </div>
+        {% endcall %}
+    </div>
+    {% endif %}
+
+    <!-- ── Options metadata (if instrument_type = option) ─────────────── -->
+    {% if trade.instrument_type == 'option' %}
+    <div class="section-header" style="margin-top: var(--space-6)">Options</div>
+    {% if options_meta %}
+    <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: var(--space-3); margin-bottom: var(--space-4)">
+        <div>
+            <div style="font-family: var(--font-ui); font-size: var(--text-xs); color: var(--color-text-tertiary)">Strategy</div>
+            <div style="font-family: var(--font-data); font-size: var(--text-sm)">{{ options_meta.strategy_type }}</div>
+        </div>
+        <div>
+            <div style="font-family: var(--font-ui); font-size: var(--text-xs); color: var(--color-text-tertiary)">IV at entry</div>
+            <div style="font-family: var(--font-data); font-size: var(--text-sm)">{{ options_meta.iv_at_entry }}</div>
+        </div>
+        <div>
+            <div style="font-family: var(--font-ui); font-size: var(--text-xs); color: var(--color-text-tertiary)">IV rank</div>
+            <div style="font-family: var(--font-data); font-size: var(--text-sm)">{{ options_meta.iv_rank_at_entry }}</div>
+        </div>
+        {% if options_meta.delta_at_entry %}
+        <div>
+            <div style="font-family: var(--font-ui); font-size: var(--text-xs); color: var(--color-text-tertiary)">Delta</div>
+            <div style="font-family: var(--font-data); font-size: var(--text-sm)">{{ options_meta.delta_at_entry }}</div>
+        </div>
+        {% endif %}
+    </div>
+    {% endif %}
+
+    {% if option_legs %}
+    <table class="table-container" style="margin-bottom: var(--space-2)">
+        <thead>
+            <tr>
+                <th>Direction</th>
+                <th>Type</th>
+                <th>Strike</th>
+                <th>Expiry</th>
+                <th>Contracts</th>
+                <th>Entry premium</th>
+                <th>Exit premium</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for leg in option_legs %}
+            <tr>
+                <td style="font-family: var(--font-ui); font-size: var(--text-sm); color: var(--color-text-secondary)">{{ leg.direction }}</td>
+                <td style="font-family: var(--font-ui); font-size: var(--text-sm); color: var(--color-text-secondary)">{{ leg.type }}</td>
+                <td style="font-family: var(--font-data); font-size: var(--text-sm); color: var(--color-text-secondary)">{{ leg.strike }}</td>
+                <td style="font-family: var(--font-data); font-size: var(--text-sm); color: var(--color-text-secondary)">{{ leg.expiry }}</td>
+                <td style="font-family: var(--font-data); font-size: var(--text-sm); color: var(--color-text-secondary)">{{ leg.contracts }}</td>
+                <td style="font-family: var(--font-data); font-size: var(--text-sm); color: var(--color-text-secondary)">{{ leg.entry_premium }}</td>
+                <td style="font-family: var(--font-data); font-size: var(--text-sm); color: var(--color-text-secondary)">{{ leg.exit_premium or '' }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% endif %}
+    {% endif %}
+
+    <!-- ── Review status ─────────────────────────────────────────────── -->
+    {% if trade.status == 'closed' %}
+    <div class="section-header" style="margin-top: var(--space-6)">Review</div>
+    {% if review %}
+    <a href="/review/{{ review.id }}" class="chip" data-layer="learning">
+        <span class="chip-accent"></span>
+        Review filed
+        {{ badge(status="done") }}
+    </a>
+    {% else %}
+    <div style="font-family: var(--font-ui); font-size: var(--text-sm); color: var(--color-warning)">
+        Trade closed — review pending.
+    </div>
+    {% endif %}
+    {% endif %}
+
+</div>
+{% endblock %}

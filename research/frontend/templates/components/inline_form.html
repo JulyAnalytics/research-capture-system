@@ -1,0 +1,16 @@
+{# inline_form.html — Inline form container macro (design spec 6.10).
+   Usage:
+     {% call inline_form(id="add-cross-current") %}
+       <input ...>
+       <button>Save</button>
+     {% endcall %}
+
+   Or as a wrapper:
+     {{ inline_form_open(id="add-cc") }}
+     {{ inline_form_close() }} #}
+
+{% macro inline_form(id="") %}
+<div class="inline-form"{% if id %} id="{{ id }}"{% endif %}>
+{{ caller() }}
+</div>
+{% endmacro %}

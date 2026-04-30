@@ -1,0 +1,23 @@
+{# table.html — Table rendering macros (design spec 6.7).
+   Usage:
+     {{ table_headers(columns=["Name", "Status", "Updated"]) }}
+     {{ table_row(cells=[...], row_class="", navigable=false) }} #}
+
+{% macro table_headers(columns, extra_class="") %}
+<thead>
+  <tr class="{{ extra_class }}">
+    {% for col in columns %}
+    <th>{{ col }}</th>
+    {% endfor %}
+  </tr>
+</thead>
+{% endmacro %}
+
+{% macro table_row(cells, row_class="", navigable=false, href="") %}
+<tr class="{{ row_class }}{% if navigable %} navigable{% endif %}"
+    {% if navigable and href %}onclick="window.location='{{ href }}'"{% endif %}>
+  {% for cell in cells %}
+  <td>{{ cell }}</td>
+  {% endfor %}
+</tr>
+{% endmacro %}

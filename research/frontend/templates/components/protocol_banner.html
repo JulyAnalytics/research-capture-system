@@ -1,0 +1,24 @@
+{# protocol_banner.html — Protocol banner macro (design spec 6.11).
+   Usage:
+     {{ protocol_banner(protocol_num=2, message="Kill condition observable — write logic before acting.") }}
+     {{ protocol_banner(protocol_num=4, message="Trade closed — review required.", action_url="/review/new?trade_id=X", action_text="File review") }}
+
+   Protocol 1 (warning): canvas updated, theses flagged. Dismissible.
+   Protocol 2 (danger):  kill condition observable. No dismiss.
+   Protocol 3 (analytical): decision point trigger met. No dismiss.
+   Protocol 4 (warning): trade closed, review required. No dismiss. #}
+
+{% macro protocol_banner(protocol_num, message, dismissible=false, action_url="", action_text="") %}
+<div class="protocol-banner protocol-banner-{{ protocol_num }} protocol-banner-enter"
+     role="status"
+     aria-label="Protocol {{ protocol_num }}: {{ message }}">
+    <span class="protocol-banner-label">Protocol {{ protocol_num }} &mdash;</span>
+    <span>{{ message }}</span>
+    {% if action_url and action_text %}
+    <a href="{{ action_url }}" class="btn-ghost" style="margin-left: auto; color: var(--color-text-primary)">{{ action_text }}</a>
+    {% endif %}
+    {% if dismissible %}
+    <button class="btn-ghost" style="margin-left: auto" onclick="this.parentElement.remove()">&times;</button>
+    {% endif %}
+</div>
+{% endmacro %}

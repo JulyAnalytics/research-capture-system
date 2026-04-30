@@ -1,0 +1,81 @@
+/* tokens.css — Custom properties for the Research Capture System.
+   Sections 2 (Colour), 3 (Typography), 4 (Spacing) of the design spec.
+   No hardcoded hex values outside this file. */
+
+:root {
+  /* ── Base palette ──────────────────────────────────────────── */
+  --color-bg:           #FAF8F3;
+  --color-surface:      #FFFFFF;
+  --color-recessed:     #F2EFE9;
+  --color-border:       #E2DDD5;
+  --color-border-light: #EBE7E0;
+
+  /* ── Text ──────────────────────────────────────────────────── */
+  --color-text-primary:   #2C2A26;
+  --color-text-secondary: #7A7368;
+  --color-text-tertiary:  #A89F96;
+  --color-text-inverse:   #FFFFFF;
+  --color-text-primary-hover: #1A1917;
+
+  /* ── Layer identity ────────────────────────────────────────── */
+  --color-analytical:       #2B5F8F;
+  --color-analytical-bg:    #EEF4FA;
+  --color-analytical-text:  #1D4270;
+
+  --color-operational:      #9B5A1A;
+  --color-operational-bg:   #FBF3E8;
+  --color-operational-text: #6B3D0F;
+
+  --color-learning:         #5B4A7A;
+  --color-learning-bg:      #F2EFF8;
+  --color-learning-text:    #3D3054;
+
+  /* ── Semantic states ───────────────────────────────────────── */
+  --color-active:     #2B6B4A;
+  --color-active-bg:  #EBF5EF;
+
+  --color-warning:    #8F6B1A;
+  --color-warning-bg: #FDF6E3;
+
+  --color-danger:     #8B2218;
+  --color-danger-bg:  #FCECEA;
+
+  --color-neutral:    #5A5650;
+  --color-neutral-bg: #F0EDE8;
+
+  /* ── Shadows ───────────────────────────────────────────────── */
+  --shadow-card:  0 1px 3px rgba(44, 42, 38, 0.07);
+  --shadow-panel: 0 4px 16px rgba(44, 42, 38, 0.11);
+  --shadow-modal: 0 8px 32px rgba(44, 42, 38, 0.16);
+
+  /* ── Typography ────────────────────────────────────────────── */
+  --font-prose: 'Lora', Georgia, serif;
+  --font-data:  'Fira Code', 'Courier New', monospace;
+  --font-ui:    'Inter', system-ui, sans-serif;
+
+  --text-xs:    11px;
+  --text-xs-lh: 1.5;
+  --text-sm:    13px;
+  --text-sm-lh: 1.6;
+  --text-base:  15px;
+  --text-base-lh: 1.7;
+  --text-prose: 16px;
+  --text-prose-lh: 1.85;
+  --text-lg:    18px;
+  --text-lg-lh: 1.5;
+  --text-xl:    22px;
+  --text-xl-lh: 1.3;
+  --text-2xl:   28px;
+  --text-2xl-lh: 1.2;
+
+  /* ── Spacing (base unit 8px) ───────────────────────────────── */
+  --space-1:  4px;
+  --space-2:  8px;
+  --space-3:  12px;
+  --space-4:  16px;
+  --space-5:  20px;
+  --space-6:  24px;
+  --space-8:  32px;
+  --space-10: 40px;
+  --space-12: 48px;
+}

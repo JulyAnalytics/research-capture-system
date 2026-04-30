@@ -1,0 +1,223 @@
+{% extends "base.html" %}
+{% from "components/badge.html" import badge %}
+{% from "components/prose_field.html" import readonly %}
+
+{% block title %}Review / Trade #{{ trade_id_short }}{% endblock %}
+
+{% block content %}
+<div x-data="{
+    mistakeType: '',
+    zone3Cleared: {{ 'true' if review.zone_3_clear == 1 else 'false' }},
+    zone3Filling: false,
+    zone3StartTime: 0,
+    phase2Filed: {{ 'true' if review.phase2_created_at else 'false' }},
+    zone3Remaining: {{ zone3_remaining_seconds | tojson }}
+}">
+
+    <!-- Back button -->
+    <button onclick="history.back()" class="btn-ghost btn-compact" style="margin-bottom: var(--space-2); color: var(--color-text-secondary)">&#8592; Back</button>
+
+    <!-- Breadcrumb -->
+    <div style="font-family: var(--font-ui); font-size: var(--text-sm); color: var(--color-text-secondary); margin-bottom: var(--space-4)">
+        <span>Review</span> <span style="margin: 0 6px">/</span>
+        <span style="color: var(--color-text-primary); font-weight: 500">Trade #{{ trade_id_short }}</span>
+    </div>
+
+    <!-- Entity identity bar -->
+    <div style="display: flex; align-items: center; gap: var(--space-4); margin-bottom: var(--space-6); padding-left: 12px; border-left: 3px solid var(--color-learning)">
+        <h1 style="font-family: var(--font-ui); font-size: var(--text-xl); font-weight: 500; margin: 0">Trade review</h1>
+        {% if review.phase2_created_at %}
+        {{ badge(status="done") }}
+        {% elif review.zone_3_clear == 1 %}
+        {{ badge(status="active", text="Phase 2 pending") }}
+        {% else %}
+        {{ badge(status="building", text="Phase 1 filed") }}
+        {% endif %}
+        <span style="font-family: var(--font-data); font-size: var(--text-sm); color: var(--color-text-secondary)">Created {{ review.locked_at }}</span>
+    </div>
+
+    <!-- Locked at -->
+    <div style="font-family: var(--font-data); font-size: var(--text-xs); color: var(--color-text-tertiary); margin-bottom: var(--space-6)">
+        Locked at {{ review.locked_at }}
+    </div>
+
+    <!-- ── Phase 1 fields (read-only after filing) ───────────────────── -->
+    <div class="section-header">Phase 1</div>
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-4); margin-bottom: var(--space-4)">
+        <div>
+            <div style="font-family: var(--font-ui); font-size: var(--text-xs); color: var(--color-text-tertiary); text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: var(--space-1)">Entry fill</div>
+            {{ readonly(content=review.entry_fill or '', frozen_label="Frozen") }}
+        </div>
+        <div>
+            <div style="font-family: var(--font-ui); font-size: var(--text-xs); color: var(--color-text-tertiary); text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: var(--space-1)">Exit fill</div>
+            {{ readonly(content=review.exit_fill or '', frozen_label="Frozen") }}
+        </div>
+    </div>
+    <div style="margin-bottom: var(--space-4)">
+        <div style="font-family: var(--font-ui); font-size: var(--text-xs); color: var(--color-text-tertiary); text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: var(--space-1)">Thesis at entry</div>
+        {{ readonly(content=review.thesis_at_entry or '', frozen_label="Frozen") }}
+    </div>
+    <div style="margin-bottom: var(--space-4)">
+        <div style="font-family: var(--font-ui); font-size: var(--text-xs); color: var(--color-text-tertiary); text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: var(--space-1)">Exit rules as written</div>
+        {{ readonly(content=review.exit_rules_as_written or '', frozen_label="Frozen") }}
+    </div>
+    <div style="margin-bottom: var(--space-4)">
+        <div style="font-family: var(--font-ui); font-size: var(--text-xs); color: var(--color-text-tertiary); text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: var(--space-1)">What I actually did</div>
+        {{ readonly(content=review.what_i_actually_did or '', frozen_label="Frozen") }}
+    </div>
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-4); margin-bottom: var(--space-6)">
+        <div>
+            <div style="font-family: var(--font-ui); font-size: var(--text-xs); color: var(--color-text-tertiary); text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: var(--space-1)">Emotional state</div>
+            <div class="prose-field-readonly" style="max-width: 160px">{{ review.emotional_state or '' }}</div>
+        </div>
+        <div>
+            <div style="font-family: var(--font-ui); font-size: var(--text-xs); color: var(--color-text-tertiary); text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: var(--space-1)">Rules followed</div>
+            <div class="prose-field-readonly">{{ review.rules_followed or '' }}</div>
+        </div>
+    </div>
+
+    <!-- ── Zone 3 clearance / Phase 2 ───────────────────────────────── -->
+    <div class="section-header">Phase 2</div>
+
+    <!-- Gated state: Zone 3 not cleared -->
+    <template x-if="!zone3Cleared && !phase2Filed">
+        <div>
+            {% if zone3_remaining_seconds > 0 %}
+            <!-- Countdown state -->
+            <div style="background: var(--color-recessed); opacity: 0.5; border-radius: 6px; padding: var(--space-4); margin-bottom: var(--space-4)">
+                <div style="font-family: var(--font-ui); font-size: var(--text-sm); color: var(--color-text-secondary); margin-bottom: var(--space-2)">
+                    Available after Zone 3 clearance (24h minimum).
+                </div>
+                <div style="font-family: var(--font-data); font-size: var(--text-sm); color: var(--color-text-tertiary)">
+                    Unlocks in {{ zone3_countdown }}
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- Zone 3 clearance button -->
+            {% if zone3_remaining_seconds <= 0 %}
+            <button class="zone3-btn"
+                    style="width: 100%; height: 52px; background: var(--color-recessed); border: 1px solid var(--color-border); border-radius: 6px; font-family: var(--font-prose); font-size: 15px; color: var(--color-text-primary); cursor: pointer; position: relative; overflow: hidden"
+                    aria-label="I have processed the emotional content from this trade. Zone 3 is clear."
+                    @mousedown="zone3Filling = true; zone3StartTime = Date.now(); $el.classList.add('filling')"
+                    @mouseup="if (zone3Filling) { zone3Filling = false; $el.classList.remove('filling'); if ((Date.now() - zone3StartTime) >= 500) { fetch('/review/{{ review.id }}/zone3-clear', {method: 'PATCH', headers: {'Content-Type': 'application/json'}}).then(r => { if(r.ok) { window.location.reload(); } else { r.json().then(e => alert(e.detail || e)); } }); } }"
+                    @mouseleave="zone3Filling = false; $el.classList.remove('filling')"
+                    @touchstart.prevent="zone3Filling = true; zone3StartTime = Date.now(); $el.classList.add('filling')"
+                    @touchend="if (zone3Filling) { zone3Filling = false; $el.classList.remove('filling'); if ((Date.now() - zone3StartTime) >= 500) { fetch('/review/{{ review.id }}/zone3-clear', {method: 'PATCH', headers: {'Content-Type': 'application/json'}}).then(r => { if(r.ok) { window.location.reload(); } }); } }">
+                <span style="position: relative; z-index: 1">I have processed the emotional content from this trade. Zone 3 is clear.</span>
+            </button>
+            {% endif %}
+        </div>
+    </template>
+
+    <!-- Zone 3 cleared confirmation -->
+    <template x-if="zone3Cleared && !phase2Filed">
+        <div>
+            <div style="font-family: var(--font-data); font-size: var(--text-sm); color: var(--color-active); margin-bottom: var(--space-4)">
+                {% if review.zone_3_cleared_at %}Zone 3 cleared at {{ review.zone_3_cleared_at }}{% else %}Zone 3 cleared{% endif %}
+            </div>
+
+            <!-- Mistake type cards -->
+            <div style="display: flex; flex-direction: column; gap: var(--space-3); margin-bottom: var(--space-6)">
+                <div style="height: auto; padding: 16px; border: 1px solid var(--color-border); border-radius: 6px; cursor: pointer; background: transparent"
+                     :style="mistakeType === 'type_1' ? 'border-color: var(--color-text-primary); background: var(--color-recessed)' : ''"
+                     @click="mistakeType = 'type_1'">
+                    <div style="font-family: var(--font-ui); font-size: var(--text-sm); font-weight: 500; color: var(--color-text-primary)">Type 1</div>
+                    <div style="font-family: var(--font-ui); font-size: 12px; color: var(--color-text-secondary); margin-top: 2px">Process failure &mdash; I broke my rules.</div>
+                </div>
+                <div style="height: auto; padding: 16px; border: 1px solid var(--color-border); border-radius: 6px; cursor: pointer; background: transparent"
+                     :style="mistakeType === 'type_2' ? 'border-color: var(--color-text-primary); background: var(--color-recessed)' : ''"
+                     @click="mistakeType = 'type_2'">
+                    <div style="font-family: var(--font-ui); font-size: var(--text-sm); font-weight: 500; color: var(--color-text-primary)">Type 2</div>
+                    <div style="font-family: var(--font-ui); font-size: 12px; color: var(--color-text-secondary); margin-top: 2px">Model failure &mdash; my rules were followed, my model was wrong.</div>
+                </div>
+                <div style="height: auto; padding: 16px; border: 1px solid var(--color-border); border-radius: 6px; cursor: pointer; background: transparent"
+                     :style="mistakeType === 'type_3' ? 'border-color: var(--color-text-primary); background: var(--color-recessed)' : ''"
+                     @click="mistakeType = 'type_3'">
+                    <div style="font-family: var(--font-ui); font-size: var(--text-sm); font-weight: 500; color: var(--color-text-primary)">Type 3</div>
+                    <div style="font-family: var(--font-ui); font-size: 12px; color: var(--color-text-secondary); margin-top: 2px">Variance &mdash; correct process, losing outcome.</div>
+                </div>
+            </div>
+
+            <!-- Phase 2 fields (visible after mistake type selected) -->
+            <template x-if="mistakeType">
+                <div x-transition>
+                    <!-- Analysis -->
+                    <div style="margin-bottom: var(--space-4)">
+                        <div class="section-header" style="margin-top: 0; margin-bottom: var(--space-2)" x-text="'Type ' + mistakeType.split('_')[1] + ' analysis'"></div>
+                        <textarea class="form-textarea" id="p2-analysis" rows="5"
+                                  style="font-family: var(--font-prose); font-size: var(--text-prose); line-height: var(--text-prose-lh); min-height: 120px"
+                                  placeholder="What happened?"></textarea>
+                    </div>
+
+                    <!-- Single update -->
+                    <div style="margin-bottom: var(--space-4)">
+                        <div class="section-header" style="margin-top: 0; margin-bottom: var(--space-2)">Single update &mdash; written as a rule, not a principle.</div>
+                        <textarea class="form-textarea" id="p2-single-update" rows="4"
+                                  style="font-family: var(--font-prose); font-size: var(--text-prose); line-height: var(--text-prose-lh)"></textarea>
+                        <div style="font-family: var(--font-ui); font-size: 11px; font-style: italic; color: var(--color-text-tertiary); margin-top: var(--space-1)">
+                            Fails: "Be more patient." &nbsp; Passes: "When thesis invalidates on open position, write hold-vs-redeploy logic before acting."
+                        </div>
+                    </div>
+
+                    <!-- What not changing -->
+                    <div style="margin-bottom: var(--space-6)">
+                        <div class="section-header" style="margin-top: 0; margin-bottom: var(--space-2)">What I am not changing.</div>
+                        <textarea class="form-textarea" id="p2-what-not-changing" rows="3"
+                                  style="font-family: var(--font-prose); font-size: var(--text-prose); line-height: var(--text-prose-lh)"></textarea>
+                    </div>
+
+                    <!-- Submit Phase 2 -->
+                    <button class="btn btn-primary" style="width: 100%" @click="
+                        const analysis = document.getElementById('p2-analysis').value;
+                        const singleUpdate = document.getElementById('p2-single-update').value;
+                        const whatNotChanging = document.getElementById('p2-what-not-changing').value;
+                        if (!analysis || !singleUpdate || !whatNotChanging || !mistakeType) return;
+                        fetch('/review/{{ review.id }}/phase2', {
+                            method: 'PATCH', headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify({ mistake_type: mistakeType, analysis, single_update: singleUpdate, what_not_changing: whatNotChanging })
+                        }).then(r => { if(r.ok) { window.location.reload(); } else { r.json().then(e => alert(e.detail)); } });
+                    ">File Phase 2</button>
+                </div>
+            </template>
+        </div>
+    </template>
+
+    <!-- Phase 2 filed (read-only) -->
+    <template x-if="phase2Filed">
+        <div>
+            <div style="font-family: var(--font-data); font-size: var(--text-xs); color: var(--color-active); margin-bottom: var(--space-4)">
+                Phase 2 filed {{ review.phase2_created_at or '' }}
+            </div>
+
+            {% if review.mistake_type %}
+            <div style="margin-bottom: var(--space-4)">
+                {{ badge(status=review.mistake_type) }}
+            </div>
+            {% endif %}
+
+            {% if review.analysis %}
+            <div style="margin-bottom: var(--space-4)">
+                <div class="section-header" style="margin-top: 0; margin-bottom: var(--space-2)">Analysis</div>
+                {{ readonly(content=review.analysis, frozen_label="Filed") }}
+            </div>
+            {% endif %}
+
+            {% if review.single_update %}
+            <div style="margin-bottom: var(--space-4)">
+                <div class="section-header" style="margin-top: 0; margin-bottom: var(--space-2)">Single update</div>
+                {{ readonly(content=review.single_update, frozen_label="Filed") }}
+            </div>
+            {% endif %}
+
+            {% if review.what_not_changing %}
+            <div style="margin-bottom: var(--space-4)">
+                <div class="section-header" style="margin-top: 0; margin-bottom: var(--space-2)">What I am not changing</div>
+                {{ readonly(content=review.what_not_changing, frozen_label="Filed") }}
+            </div>
+            {% endif %}
+        </div>
+    </template>
+
+</div>
+{% endblock %}

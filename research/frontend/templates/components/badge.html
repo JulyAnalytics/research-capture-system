@@ -1,0 +1,5 @@
+{# badge.html — Status badge macro (design spec 6.1).
+   Usage: {{ badge(status="active") }} #}
+{% macro badge(status, text=none) %}
+<span class="badge" data-status="{{ status }}" aria-label="{{ text or status }}">{{ text or status }}</span>
+{% endmacro %}

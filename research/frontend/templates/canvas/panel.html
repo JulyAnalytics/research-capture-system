@@ -1,0 +1,76 @@
+{# canvas/panel.html — HTMX partial for right context panel on canvas detail.
+   Rendered by GET /canvas/{id}/panel.
+   Design spec section 5 (panel sections for canvas). #}
+
+{% from "components/badge.html" import badge %}
+{% from "components/chip.html" import chip %}
+
+<!-- Linked theses -->
+<div class="panel-section">
+    <div class="panel-section-header">Linked theses</div>
+    <div class="panel-section-content">
+        {% if linked_theses %}
+            {% for t in linked_theses %}
+            <div style="margin-bottom: 6px">
+                {{ chip(label=t.instrument, layer="analytical", href="/thesis/" ~ t.id, badge_status=t.status) }}
+            </div>
+            {% endfor %}
+        {% else %}
+            <span style="color: var(--color-text-tertiary)">No linked theses.</span>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Observation backlinks -->
+<div class="panel-section">
+    <div class="panel-section-header">Observation backlinks</div>
+    <div class="panel-section-content">
+        {% if observation_backlinks %}
+            {% for o in observation_backlinks %}
+            <div style="margin-bottom: 6px; display: flex; align-items: center; gap: var(--space-2)">
+                <span style="font-family: var(--font-data); font-size: var(--text-xs); color: var(--color-text-secondary)">{{ o.created_at[:10] }}</span>
+                <a href="/observation/{{ o.id }}" style="font-family: var(--font-ui); font-size: var(--text-sm); color: var(--color-text-primary); text-decoration: none">{{ o.instrument }}</a>
+                {{ badge(status=o.type) }}
+            </div>
+            {% endfor %}
+        {% else %}
+            <span style="color: var(--color-text-tertiary)">No linked observations.</span>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Cross-currents -->
+<div class="panel-section">
+    <div class="panel-section-header">Cross-currents</div>
+    <div class="panel-section-content">
+        {% if cross_currents %}
+            {% for cc in cross_currents %}
+            <div style="margin-bottom: 6px">
+                {{ chip(label=cc.target_name, layer="analytical", href="/canvas/" ~ cc.target_canvas_id) }}
+            </div>
+            {% endfor %}
+        {% else %}
+            <span style="color: var(--color-text-tertiary)">No cross-currents.</span>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Version history -->
+<div class="panel-section" x-data="{ expanded: false }">
+    <div class="panel-section-header" style="cursor: pointer; display: flex; justify-content: space-between; align-items: center" @click="expanded = !expanded">
+        <span>Version history</span>
+        <span x-text="expanded ? '−' : '+'" style="font-size: 12px"></span>
+    </div>
+    <div class="panel-section-content" x-show="expanded" x-transition>
+        {% if version_history %}
+            {% for v in version_history %}
+            <div style="margin-bottom: 8px">
+                <div style="font-family: var(--font-data); font-size: var(--text-xs); color: var(--color-text-secondary)">{{ v.timestamp }}</div>
+                <div style="font-family: var(--font-ui); font-size: var(--text-xs); color: var(--color-text-primary)">{{ v.diff_summary }}</div>
+            </div>
+            {% endfor %}
+        {% else %}
+            <span style="color: var(--color-text-tertiary)">No version history.</span>
+        {% endif %}
+    </div>
+</div>

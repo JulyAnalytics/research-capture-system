@@ -1,0 +1,57 @@
+{# prose_field.html — Editable and read-only prose field macros (design spec 6.3, 6.4).
+
+   editable:  {{ prose_field.editable(id, content, save_url, require_diff=false, field_name="narrative") }}
+   readonly:  {{ prose_field.readonly(content, frozen_label="", data_font=false) }}
+   append_only: {{ prose_field.append_only(content, notice="") }} #}
+
+
+{% macro editable(id, content, save_url, require_diff=false, field_name="narrative") %}
+<div class="prose-field" x-data="{ editing: false, diff_summary: '' }">
+    <span class="prose-field-edit-label">edit</span>
+    <div class="prose-field-content"
+         @click="editing = true"
+         x-show="!editing"
+         x-text="{{ content | tojson }}">{{ content }}</div>
+
+    <template x-if="editing">
+        <div>
+            <textarea class="form-textarea"
+                      x-ref="proseInput"
+                      style="font-family: var(--font-prose); font-size: var(--text-prose); line-height: var(--text-prose-lh); min-height: 120px"
+                      x-init="$nextTick(() => { $refs.proseInput.value = {{ content | tojson }}; $refs.proseInput.focus() })">{{ content }}</textarea>
+
+            {% if require_diff %}
+            <div style="margin-top: var(--space-2)">
+                <label style="font-family: var(--font-ui); font-size: 12px; color: var(--color-text-secondary)">Summarise this update</label>
+                <input type="text" class="form-input" x-model="diff_summary" placeholder="What changed?" style="margin-top: 4px">
+            </div>
+            {% endif %}
+
+            <div class="prose-field-actions">
+                <button class="btn btn-primary btn-compact"
+                        :disabled="{{ 'true' if require_diff else 'false' }}{% if require_diff %} || !diff_summary.trim(){% endif %}"
+                        @click="
+                            let body = { {{ field_name }}: $refs.proseInput.value {% if require_diff %}, diff_summary: diff_summary {% endif %} };
+                            fetch('{{ save_url }}', { method: 'PATCH', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body) })
+                                .then(r => r.json())
+                                .then(data => { editing = false; if (data.protocol_1) showProtocol1(data.protocol_1); });
+                        ">Save</button>
+                <button class="prose-field-discard" @click="editing = false">Discard changes</button>
+            </div>
+        </div>
+    </template>
+</div>
+{% endmacro %}
+
+
+{% macro readonly(content, frozen_label="", data_font=false) %}
+<div class="prose-field-readonly-container">
+    {% if frozen_label %}
+    <div class="prose-field-frozen-label">
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M3 1h6a1 1 0 011 1v7.5a.5.5 0 01-.25.433L6 11.5 2.25 9.933A.5.5 0 012 9.5V2a1 1 0 011-1z" stroke="currentColor" stroke-width="1"/></svg>
+        {{ frozen_label }}
+    </div>
+    {% endif %}
+    <div class="prose-field-readonly{% if data_font %} data-font{% endif %}">{{ content }}</div>
+</div>
+{% endmacro %}

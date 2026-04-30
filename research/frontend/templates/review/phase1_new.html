@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+{% from "components/badge.html" import badge %}
+
+{% block title %}New review{% endblock %}
+
+{% block content %}
+<div x-data="{
+    rulesFollowed: '',
+    filing: false
+}">
+
+    <!-- Back button -->
+    <button onclick="history.back()" class="btn-ghost btn-compact" style="margin-bottom: var(--space-2); color: var(--color-text-secondary)">&#8592; Back</button>
+
+    <!-- Breadcrumb -->
+    <div style="font-family: var(--font-ui); font-size: var(--text-sm); color: var(--color-text-secondary); margin-bottom: var(--space-4)">
+        <span>Review</span> <span style="margin: 0 6px">/</span>
+        <span style="color: var(--color-text-primary); font-weight: 500">New</span>
+    </div>
+
+    <!-- Entity identity bar -->
+    <div style="display: flex; align-items: center; gap: var(--space-4); margin-bottom: var(--space-6); padding-left: 12px; border-left: 3px solid var(--color-learning)">
+        <h1 style="font-family: var(--font-ui); font-size: var(--text-xl); font-weight: 500; margin: 0">File review</h1>
+        {{ badge(status=trade.status) }}
+        <span style="font-family: var(--font-data); font-size: var(--text-sm); color: var(--color-text-secondary)">
+            {{ trade.thesis_instrument or trade.instrument_type }}
+        </span>
+    </div>
+
+    <!-- Thesis snapshot reference -->
+    {% if trade.thesis_narrative %}
+    <div style="margin-bottom: var(--space-6)">
+        <div class="section-header" style="margin-top: 0">Thesis at entry</div>
+        <div class="prose-field-readonly">{{ trade.thesis_narrative }}</div>
+    </div>
+    {% endif %}
+
+    <!-- Phase 1 form -->
+    <div class="section-header" style="margin-top: 0">Phase 1</div>
+
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-4); margin-bottom: var(--space-4)">
+        <div>
+            <label style="font-family: var(--font-ui); font-size: var(--text-xs); color: var(--color-text-tertiary); text-transform: uppercase; letter-spacing: 0.07em; display: block; margin-bottom: var(--space-1)">Entry fill</label>
+            <textarea class="form-textarea" id="entry-fill" rows="3" placeholder="How did the entry actually fill?"></textarea>
+        </div>
+        <div>
+            <label style="font-family: var(--font-ui); font-size: var(--text-xs); color: var(--color-text-tertiary); text-transform: uppercase; letter-spacing: 0.07em; display: block; margin-bottom: var(--space-1)">Exit fill</label>
+            <textarea class="form-textarea" id="exit-fill" rows="3" placeholder="How did the exit actually fill?"></textarea>
+        </div>
+    </div>
+
+    <div style="margin-bottom: var(--space-4)">
+        <label style="font-family: var(--font-ui); font-size: var(--text-xs); color: var(--color-text-tertiary); text-transform: uppercase; letter-spacing: 0.07em; display: block; margin-bottom: var(--space-1)">What I actually did</label>
+        <textarea class="form-textarea" id="what-i-did" rows="4"
+                  style="font-family: var(--font-prose); font-size: var(--text-prose); line-height: var(--text-prose-lh)"
+                  placeholder="Describe what actually happened during the trade."></textarea>
+    </div>
+
+    <div style="margin-bottom: var(--space-4)">
+        <label style="font-family: var(--font-ui); font-size: var(--text-xs); color: var(--color-text-tertiary); text-transform: uppercase; letter-spacing: 0.07em; display: block; margin-bottom: var(--space-1)">Exit rules as written</label>
+        <textarea class="form-textarea" id="exit-rules" rows="3"
+                  style="font-family: var(--font-prose); font-size: var(--text-prose); line-height: var(--text-prose-lh)"
+                  placeholder="What were the exit rules?"></textarea>
+    </div>
+
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-4); margin-bottom: var(--space-6)">
+        <div>
+            <label style="font-family: var(--font-ui); font-size: var(--text-xs); color: var(--color-text-tertiary); text-transform: uppercase; letter-spacing: 0.07em; display: block; margin-bottom: var(--space-1)">Emotional state</label>
+            <input type="text" class="form-input form-input-narrow" id="emotional-state" placeholder="One word" style="max-width: 160px">
+        </div>
+        <div>
+            <label style="font-family: var(--font-ui); font-size: var(--text-xs); color: var(--color-text-tertiary); text-transform: uppercase; letter-spacing: 0.07em; display: block; margin-bottom: var(--space-1)">Rules followed?</label>
+            <div style="display: flex; gap: var(--space-2); margin-top: 4px">
+                <button class="btn btn-compact" style="border: 1px solid var(--color-border)"
+                        :style="rulesFollowed === 'yes' ? 'background: var(--color-recessed); border-color: var(--color-text-primary)' : ''"
+                        @click="rulesFollowed = 'yes'">Yes</button>
+                <button class="btn btn-compact" style="border: 1px solid var(--color-border)"
+                        :style="rulesFollowed === 'partially' ? 'background: var(--color-recessed); border-color: var(--color-text-primary)' : ''"
+                        @click="rulesFollowed = 'partially'">Partially</button>
+                <button class="btn btn-compact" style="border: 1px solid var(--color-border)"
+                        :style="rulesFollowed === 'no' ? 'background: var(--color-recessed); border-color: var(--color-text-primary)' : ''"
+                        @click="rulesFollowed = 'no'">No</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Submit -->
+    <button class="btn btn-primary" style="width: 100%" :disabled="filing" @click="
+        const entryFill = document.getElementById('entry-fill').value;
+        const exitFill = document.getElementById('exit-fill').value;
+        const whatIDid = document.getElementById('what-i-did').value;
+        const exitRules = document.getElementById('exit-rules').value;
+        const emotionalState = document.getElementById('emotional-state').value;
+        if (!entryFill || !exitFill || !whatIDid || !exitRules || !emotionalState || !rulesFollowed) return;
+        filing = true;
+        fetch('/review', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                trade_id: '{{ trade.id }}',
+                closed_at: '{{ trade.closed_at or now_date }}T00:00:00Z',
+                entry_fill: entryFill,
+                exit_fill: exitFill,
+                thesis_at_entry: '{{ trade.thesis_narrative or "" | e }}',
+                exit_rules_as_written: exitRules,
+                what_i_actually_did: whatIDid,
+                emotional_state: emotionalState,
+                rules_followed: rulesFollowed
+            })
+        }).then(r => r.json()).then(data => {
+            if (data.id) { window.location.href = '/review/' + data.id; }
+            else { filing = false; }
+        }).catch(() => { filing = false; });
+    ">File Phase 1</button>
+
+</div>
+{% endblock %}

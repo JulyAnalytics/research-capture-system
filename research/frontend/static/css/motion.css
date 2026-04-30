@@ -1,0 +1,184 @@
+/* motion.css — All transition declarations (design spec section 8).
+   Functional motion only. Every transition is listed; nothing not on
+   this list is animated. */
+
+/* ── Right panel ─────────────────────────────────────────────── */
+.panel-right {
+  transition: transform 200ms ease-out;
+}
+
+.panel-right:not(.visible) {
+  transition: transform 150ms ease-in;
+}
+
+/* ── Main content margin ─────────────────────────────────────── */
+.main-content {
+  transition: margin-right 200ms ease-out;
+}
+
+/* ── Status badge update ─────────────────────────────────────── */
+.badge-updating {
+  animation: badge-flash 150ms ease;
+}
+
+@keyframes badge-flash {
+  0%   { opacity: 1; }
+  50%  { opacity: 0; }
+  100% { opacity: 1; }
+}
+
+/* ── Row mark-done ───────────────────────────────────────────── */
+.row-done {
+  animation: row-fade 150ms ease forwards;
+}
+
+@keyframes row-fade {
+  to {
+    opacity: 0;
+    height: 0;
+    padding: 0 14px;
+  }
+}
+
+/* ── Inline form expand/collapse ─────────────────────────────── */
+.inline-form-enter {
+  animation: inline-form-show 200ms ease-out forwards;
+}
+
+@keyframes inline-form-show {
+  from {
+    opacity: 0;
+    max-height: 0;
+  }
+  to {
+    opacity: 1;
+    max-height: 500px;
+  }
+}
+
+.inline-form-exit {
+  animation: inline-form-hide 200ms ease-in forwards;
+}
+
+@keyframes inline-form-hide {
+  from {
+    opacity: 1;
+    max-height: 500px;
+  }
+  to {
+    opacity: 0;
+    max-height: 0;
+  }
+}
+
+/* ── Ritual section collapse ─────────────────────────────────── */
+.ritual-section-collapsed {
+  animation: ritual-collapse 250ms ease-in-out forwards;
+}
+
+@keyframes ritual-collapse {
+  to {
+    height: 44px;
+    overflow: hidden;
+  }
+}
+
+/* ── Protocol banner entry/exit ──────────────────────────────── */
+.protocol-banner-enter {
+  animation: banner-show 200ms ease-out forwards;
+}
+
+@keyframes banner-show {
+  from {
+    opacity: 0;
+    max-height: 0;
+    padding: 0 var(--space-4);
+  }
+  to {
+    opacity: 1;
+    max-height: 100px;
+    padding: 10px var(--space-4);
+  }
+}
+
+.protocol-banner-exit {
+  animation: banner-hide 150ms ease-in forwards;
+}
+
+@keyframes banner-hide {
+  from {
+    opacity: 1;
+    max-height: 100px;
+  }
+  to {
+    opacity: 0;
+    max-height: 0;
+    padding: 0 var(--space-4);
+  }
+}
+
+/* ── Evening routing item ────────────────────────────────────── */
+.routing-item-exit {
+  animation: routing-out 150ms ease-in forwards;
+}
+
+@keyframes routing-out {
+  to { opacity: 0; }
+}
+
+.routing-item-enter {
+  animation: routing-in 150ms ease-out forwards;
+}
+
+@keyframes routing-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+/* ── Zone 3 button fill ──────────────────────────────────────── */
+.zone3-btn {
+  position: relative;
+  overflow: hidden;
+}
+
+.zone3-btn::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 0;
+  height: 100%;
+  background: var(--color-recessed);
+  transition: width 500ms linear;
+}
+
+.zone3-btn.filling::before {
+  width: 100%;
+}
+
+/* ── Nav-guard warning flash ─────────────────────────────────── */
+.nav-warn-flash {
+  animation: nav-warn 0.5s ease;
+}
+
+@keyframes nav-warn {
+  0%   { box-shadow: 0 0 0 0 var(--color-active); }
+  40%  { box-shadow: 0 0 0 3px var(--color-active); }
+  100% { box-shadow: 0 0 0 0 var(--color-active); }
+}
+
+/* ── Typeahead dropdown ──────────────────────────────────────── */
+.typeahead-dropdown {
+  animation: typeahead-in 120ms ease-out forwards;
+}
+
+@keyframes typeahead-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

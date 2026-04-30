@@ -1,0 +1,395 @@
+{% extends "base.html" %}
+{% from "components/badge.html" import badge %}
+{% from "components/chip.html" import chip %}
+{% from "components/prose_field.html" import editable %}
+{% from "components/inline_form.html" import inline_form %}
+{% from "components/protocol_banner.html" import protocol_banner %}
+
+{% block title %}Thesis / {{ thesis.instrument }}{% endblock %}
+
+{% block content %}
+<div x-data="{
+    showAddMacroKC: false,
+    showAddTechKC: false,
+    showAddDP: false,
+    gates: {{ gate_status | tojson }},
+    currentStatus: '{{ thesis.status }}'
+}">
+
+    <!-- Back button (change spec Task 012 delta) -->
+    <button onclick="history.back()" class="btn-ghost btn-compact" style="margin-bottom: var(--space-2); color: var(--color-text-secondary)">← Back</button>
+
+    <!-- Protocol banners -->
+    {% for flag in protocol2_flags %}
+    {{ protocol_banner(2, "Kill condition observable on " ~ flag.canvas_name ~ " — write hold-vs-redeploy logic before acting.") }}
+    {% endfor %}
+    {% for flag in protocol3_flags %}
+    {{ protocol_banner(3, "Decision point trigger met: " ~ flag.trigger ~ " — execute or log deviation.") }}
+    {% endfor %}
+
+    <!-- Breadcrumb -->
+    <div style="font-family: var(--font-ui); font-size: var(--text-sm); color: var(--color-text-secondary); margin-bottom: var(--space-4)">
+        <span>Thesis</span> <span style="margin: 0 6px">/</span>
+        <span style="color: var(--color-text-primary); font-weight: 500">{{ thesis.instrument }}</span>
+    </div>
+
+    <!-- Entity identity bar -->
+    <div style="display: flex; align-items: center; gap: var(--space-4); margin-bottom: var(--space-6); padding-left: 12px; border-left: 3px solid var(--color-analytical)">
+        <h1 style="font-family: var(--font-ui); font-size: var(--text-xl); font-weight: 500; margin: 0">{{ thesis.instrument }}</h1>
+        <span id="thesis-status-badge">{{ badge(status=thesis.status) }}</span>
+        <span style="font-family: var(--font-data); font-size: var(--text-sm); color: var(--color-text-secondary)">{{ thesis.last_updated }}</span>
+
+        <div style="margin-left: auto; display: flex; gap: var(--space-2)">
+            <!-- State transition buttons — only valid next states rendered -->
+            {% if thesis.status == 'building' %}
+            <button class="btn btn-primary btn-compact"
+                    {% if not gate_status.all_met %}disabled{% endif %}
+                    {% if not gate_status.all_met %}
+                    title="Unmet gates:{% if not gate_status.has_kill_conditions %} no macro kill conditions;{% endif %}{% if not gate_status.has_decision_points %} no decision points;{% endif %}{% if not gate_status.has_worst_case %} worst_case_dollar must be positive;{% endif %}{% if not gate_status.has_linked_canvases %} must link at least one canvas{% endif %}"
+                    style="opacity: 0.4; cursor: not-allowed"
+                    {% endif %}
+                    hx-patch="{{ '/thesis/%s/status' % thesis.id }}"
+                    hx-headers='{"Content-Type": "application/json"}'
+                    hx-vals='{"status": "ready"}'
+                    hx-swap="none"
+                    hx-on::after-request="location.reload()">Mark ready</button>
+            {% elif thesis.status == 'ready' %}
+            <button class="btn btn-primary btn-compact"
+                    onclick="fetch('{{ '/thesis/%s/status' % thesis.id }}', {method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify({status:'active'})}).then(r => { if(r.ok) location.reload(); })">Open trade → Active</button>
+            <button class="btn btn-secondary btn-compact"
+                    hx-patch="{{ '/thesis/%s/status' % thesis.id }}"
+                    hx-headers='{"Content-Type": "application/json"}'
+                    hx-vals='{"status": "building"}'
+                    hx-swap="none"
+                    hx-on::after-request="location.reload()">← Return to building</button>
+            {% elif thesis.status == 'active' %}
+            <button class="btn btn-danger btn-compact"
+                    onclick="if(confirm('Fire kill condition on {{ thesis.instrument }}?')) {
+                        fetch('{{ '/thesis/%s/status' % thesis.id }}', {method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify({status:'invalidated'})}).then(r => { if(r.ok) location.reload(); });
+                    }">Fire kill condition</button>
+            {% elif thesis.status == 'invalidated' %}
+            <button class="btn btn-secondary btn-compact"
+                    hx-patch="{{ '/thesis/%s/status' % thesis.id }}"
+                    hx-headers='{"Content-Type": "application/json"}'
+                    hx-vals='{"status": "building"}'
+                    hx-swap="none"
+                    hx-on::after-request="location.reload()">Rebuild thesis</button>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- ── worst_case_dollar display ─────────────────────────────────── -->
+    <div style="margin-bottom: var(--space-6)">
+        <div style="font-family: var(--font-ui); font-size: 10px; font-weight: 500; letter-spacing: 0.08em; text-transform: uppercase; color: var(--color-text-tertiary); margin-bottom: 4px">Worst case</div>
+        {% if thesis.worst_case_dollar %}
+        <div style="font-family: var(--font-data); font-size: var(--text-2xl); font-weight: 600; color: var(--color-danger); line-height: 1.2">${{ "${:,.0f}".format(thesis.worst_case_dollar) }}</div>
+        {% else %}
+        <div x-data="{ editing: false }">
+            <span style="font-family: var(--font-data); font-size: var(--text-2xl); font-weight: 600; color: var(--color-text-tertiary); line-height: 1.2; cursor: pointer"
+                  @click="editing = true">Not set</span>
+            <template x-if="editing">
+                <div style="display: flex; gap: var(--space-2); align-items: center; margin-top: 4px">
+                    <span style="font-family: var(--font-data); font-size: var(--text-lg); color: var(--color-text-secondary)">$</span>
+                    <input type="number" class="form-input" x-ref="worstCaseInput" placeholder="e.g. 24000" style="max-width: 200px"
+                           x-init="$nextTick(() => $refs.worstCaseInput.focus())">
+                    <button class="btn btn-primary btn-compact" @click="
+                        fetch('{{ '/thesis/%s' % thesis.id }}', {method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify({worst_case_dollar: parseFloat($refs.worstCaseInput.value)})}).then(r => { if(r.ok) location.reload(); });
+                    ">Save</button>
+                    <button class="btn-ghost btn-compact" @click="editing = false">Cancel</button>
+                </div>
+            </template>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- ── Narrative section ──────────────────────────────────────── -->
+    <div class="section-header">Narrative</div>
+    {{ editable(
+        id="thesis-narrative",
+        content=thesis.narrative,
+        save_url="/thesis/%s" % thesis.id
+    ) }}
+
+    <!-- ── Win condition section ──────────────────────────────────── -->
+    <div class="section-header">Win condition</div>
+    {{ editable(
+        id="thesis-win-condition",
+        content=thesis.win_condition,
+        save_url="/thesis/%s" % thesis.id,
+        field_name="win_condition"
+    ) }}
+
+    <!-- ── Kill conditions section ────────────────────────────────── -->
+    <div class="section-header">Kill conditions</div>
+
+    <!-- Macro kill conditions -->
+    <div style="margin-bottom: var(--space-4)">
+        <div style="font-family: var(--font-ui); font-size: var(--text-xs); color: var(--color-text-secondary); margin-bottom: var(--space-2); font-weight: 500">Macro</div>
+
+        {% if kill_conditions.macro %}
+        <table class="table-container" style="margin-bottom: var(--space-2)">
+            <thead>
+                <tr>
+                    <th>Condition</th>
+                    <th>Linked canvas</th>
+                    <th>Fired</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for kc in kill_conditions.macro %}
+                <tr class="{% if kc.fired_at %}row-danger{% endif %}">
+                    <td style="font-family: var(--font-ui); font-size: var(--text-sm)">{{ kc.condition }}</td>
+                    <td>
+                        {% if kc.canvas_name %}
+                        {{ chip(label=kc.canvas_name, layer="analytical", href="/canvas/" ~ kc.linked_canvas_id) }}
+                        {% else %}
+                        <span style="color: var(--color-text-tertiary)">—</span>
+                        {% endif %}
+                    </td>
+                    <td style="font-family: var(--font-data); font-size: var(--text-sm);
+                        {% if kc.fired_at %}color: var(--color-danger){% endif %}">
+                        {% if kc.fired_at %}{{ kc.fired_at }}{% else %}
+                        <button class="btn-ghost btn-compact" style="color: var(--color-danger); font-size: var(--text-xs)"
+                                hx-patch="{{ '/thesis/%s/kill-conditions/%s/fire' % (thesis.id, kc.id) }}"
+                                hx-swap="none"
+                                hx-on::after-request="location.reload()">Fire</button>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <div style="font-family: var(--font-ui); font-size: var(--text-sm); color: var(--color-text-tertiary); padding: var(--space-2) 0">
+            No macro kill conditions.
+        </div>
+        {% endif %}
+
+        <!-- Add macro kill condition -->
+        <div x-show="!showAddMacroKC" style="color: var(--color-text-tertiary); cursor: pointer; padding: var(--space-2) 0; font-size: var(--text-sm)"
+             @click="showAddMacroKC = true">+ Add macro kill condition</div>
+
+        <div x-show="showAddMacroKC" x-transition>
+            {% call inline_form(id="add-macro-kc-form") %}
+            <div style="display: flex; gap: var(--space-3); align-items: flex-end; flex-wrap: wrap">
+                <div style="flex: 2; min-width: 200px">
+                    <label style="font-family: var(--font-ui); font-size: var(--text-xs); color: var(--color-text-secondary); display: block; margin-bottom: 4px">Condition</label>
+                    <input type="text" class="form-input" id="macro-kc-condition" placeholder="e.g. Fed reverses hawkish stance" required>
+                </div>
+                <div style="flex: 1; min-width: 180px">
+                    <label style="font-family: var(--font-ui); font-size: var(--text-xs); color: var(--color-text-secondary); display: block; margin-bottom: 4px">Linked canvas</label>
+                    <input type="text" class="form-input" id="macro-kc-canvas-typeahead" placeholder="Search canvases..."
+                           hx-get="/canvas/search" hx-trigger="input changed delay:300ms" hx-target="#macro-kc-canvas-results" hx-vals='js:{q: this.value}'>
+                    <div id="macro-kc-canvas-results" style="margin-top: 4px"></div>
+                </div>
+                <div style="display: flex; gap: var(--space-2)">
+                    <button class="btn btn-primary btn-compact" @click="
+                        const cond = document.getElementById('macro-kc-condition').value;
+                        const canvasId = document.getElementById('macro-kc-canvas-typeahead').dataset.selectedId || null;
+                        if (!cond) return;
+                        fetch('{{ '/thesis/%s/kill-conditions/macro' % thesis.id }}', {
+                            method: 'POST',
+                            headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify({condition: cond, linked_canvas_id: canvasId})
+                        }).then(r => { if (r.ok) location.reload(); });
+                    ">Save</button>
+                    <button class="btn-ghost btn-compact" @click="showAddMacroKC = false">Cancel</button>
+                </div>
+            </div>
+            {% endcall %}
+        </div>
+    </div>
+
+    <!-- Technical kill conditions -->
+    <div style="margin-bottom: var(--space-4)">
+        <div style="font-family: var(--font-ui); font-size: var(--text-xs); color: var(--color-text-secondary); margin-bottom: var(--space-2); font-weight: 500">Technical</div>
+
+        {% if kill_conditions.technical %}
+        <table class="table-container" style="margin-bottom: var(--space-2)">
+            <thead>
+                <tr>
+                    <th>Condition</th>
+                    <th>Linked setup</th>
+                    <th>Fired</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for kc in kill_conditions.technical %}
+                <tr class="{% if kc.fired_at %}row-danger{% endif %}">
+                    <td style="font-family: var(--font-ui); font-size: var(--text-sm)">{{ kc.condition }}</td>
+                    <td>
+                        {% if kc.setup_instrument %}
+                        {{ chip(label=kc.setup_instrument, layer="operational", badge_status="") }}
+                        {% else %}
+                        <span style="color: var(--color-text-tertiary)">—</span>
+                        {% endif %}
+                    </td>
+                    <td style="font-family: var(--font-data); font-size: var(--text-sm);
+                        {% if kc.fired_at %}color: var(--color-danger){% endif %}">
+                        {% if kc.fired_at %}{{ kc.fired_at }}{% else %}
+                        <button class="btn-ghost btn-compact" style="color: var(--color-danger); font-size: var(--text-xs)"
+                                hx-patch="{{ '/thesis/%s/kill-conditions/%s/fire' % (thesis.id, kc.id) }}"
+                                hx-swap="none"
+                                hx-on::after-request="location.reload()">Fire</button>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <div style="font-family: var(--font-ui); font-size: var(--text-sm); color: var(--color-text-tertiary); padding: var(--space-2) 0">
+            No technical kill conditions.
+        </div>
+        {% endif %}
+
+        <!-- Add technical kill condition -->
+        <div x-show="!showAddTechKC" style="color: var(--color-text-tertiary); cursor: pointer; padding: var(--space-2) 0; font-size: var(--text-sm)"
+             @click="showAddTechKC = true">+ Add technical kill condition</div>
+
+        <div x-show="showAddTechKC" x-transition>
+            {% call inline_form(id="add-tech-kc-form") %}
+            <div style="display: flex; gap: var(--space-3); align-items: flex-end; flex-wrap: wrap">
+                <div style="flex: 2; min-width: 200px">
+                    <label style="font-family: var(--font-ui); font-size: var(--text-xs); color: var(--color-text-secondary); display: block; margin-bottom: 4px">Condition</label>
+                    <input type="text" class="form-input" id="tech-kc-condition" placeholder="e.g. Breaks below 200dma" required>
+                </div>
+                <div style="flex: 1; min-width: 180px">
+                    <label style="font-family: var(--font-ui); font-size: var(--text-xs); color: var(--color-text-secondary); display: block; margin-bottom: 4px">Linked setup ID</label>
+                    <input type="text" class="form-input" id="tech-kc-setup-id" placeholder="Setup ID (optional)">
+                </div>
+                <div style="display: flex; gap: var(--space-2)">
+                    <button class="btn btn-primary btn-compact" @click="
+                        const cond = document.getElementById('tech-kc-condition').value;
+                        const setupId = document.getElementById('tech-kc-setup-id').value || null;
+                        if (!cond) return;
+                        fetch('{{ '/thesis/%s/kill-conditions/technical' % thesis.id }}', {
+                            method: 'POST',
+                            headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify({condition: cond, linked_setup_id: setupId})
+                        }).then(r => { if (r.ok) location.reload(); });
+                    ">Save</button>
+                    <button class="btn-ghost btn-compact" @click="showAddTechKC = false">Cancel</button>
+                </div>
+            </div>
+            {% endcall %}
+        </div>
+    </div>
+
+    <!-- ── Decision points section ────────────────────────────────── -->
+    <div class="section-header">Decision points</div>
+
+    {% if decision_points %}
+    <table class="table-container" style="margin-bottom: var(--space-2)">
+        <thead>
+            <tr>
+                <th>Trigger</th>
+                <th>Decision</th>
+                <th>Instrument</th>
+                <th>Size</th>
+                <th>Fired</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for dp in decision_points %}
+            <tr class="{% if dp.fired_at %}row-muted{% endif %}">
+                <td style="font-family: var(--font-ui); font-size: var(--text-sm); {% if dp.fired_at %}color: var(--color-text-secondary){% endif %}">{{ dp.trigger }}</td>
+                <td style="font-family: var(--font-ui); font-size: var(--text-sm); {% if dp.fired_at %}color: var(--color-text-secondary){% endif %}">{{ dp.decision }}</td>
+                <td style="font-family: var(--font-data); font-size: var(--text-sm); {% if dp.fired_at %}color: var(--color-text-secondary){% endif %}">{{ dp.instrument }}</td>
+                <td style="font-family: var(--font-data); font-size: var(--text-sm); {% if dp.fired_at %}color: var(--color-text-secondary){% endif %}">{{ dp.size_pct }}</td>
+                <td style="font-family: var(--font-data); font-size: var(--text-sm)">
+                    {% if dp.fired_at %}
+                    <span style="color: var(--color-text-secondary)">{{ dp.fired_at }}</span>
+                    {% else %}
+                    <button class="btn-ghost btn-compact" style="color: var(--color-analytical); font-size: var(--text-xs)"
+                            onclick="
+                                const note = prompt('Deviation note (optional):');
+                                fetch('{{ '/thesis/%s/decision-points/%s/fire' % (thesis.id, dp.id) }}', {
+                                    method: 'PATCH',
+                                    headers: {'Content-Type': 'application/json'},
+                                    body: JSON.stringify({deviation_note: note || null})
+                                }).then(r => { if(r.ok) location.reload(); });
+                            ">Fire</button>
+                    {% endif %}
+                </td>
+            </tr>
+            {% if dp.deviation_note %}
+            <tr>
+                <td colspan="5" style="padding-left: 24px; font-family: var(--font-prose); font-size: 13px; color: var(--color-warning); border-bottom: 1px solid var(--color-border-light)">
+                    {{ dp.deviation_note }}
+                </td>
+            </tr>
+            {% endif %}
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <div style="font-family: var(--font-ui); font-size: var(--text-sm); color: var(--color-text-tertiary); padding: var(--space-2) 0">
+        No decision points.
+    </div>
+    {% endif %}
+
+    <!-- Add decision point -->
+    <div x-show="!showAddDP" style="color: var(--color-text-tertiary); cursor: pointer; padding: var(--space-2) 0; font-size: var(--text-sm)"
+         @click="showAddDP = true">+ Add decision point</div>
+
+    <div x-show="showAddDP" x-transition>
+        {% call inline_form(id="add-dp-form") %}
+        <div style="display: flex; gap: var(--space-3); align-items: flex-end; flex-wrap: wrap">
+            <div style="flex: 2; min-width: 180px">
+                <label style="font-family: var(--font-ui); font-size: var(--text-xs); color: var(--color-text-secondary); display: block; margin-bottom: 4px">Trigger</label>
+                <input type="text" class="form-input" id="dp-trigger" placeholder="e.g. SPY breaks 500">
+            </div>
+            <div style="flex: 1; min-width: 120px">
+                <label style="font-family: var(--font-ui); font-size: var(--text-xs); color: var(--color-text-secondary); display: block; margin-bottom: 4px">Decision</label>
+                <input type="text" class="form-input" id="dp-decision" placeholder="e.g. Add to position">
+            </div>
+            <div style="flex: 0; min-width: 100px">
+                <label style="font-family: var(--font-ui); font-size: var(--text-xs); color: var(--color-text-secondary); display: block; margin-bottom: 4px">Instrument</label>
+                <input type="text" class="form-input" id="dp-instrument" value="{{ thesis.instrument }}">
+            </div>
+            <div style="flex: 0; min-width: 80px">
+                <label style="font-family: var(--font-ui); font-size: var(--text-xs); color: var(--color-text-secondary); display: block; margin-bottom: 4px">Size</label>
+                <input type="text" class="form-input" id="dp-size" placeholder="e.g. 2%">
+            </div>
+            <div style="display: flex; gap: var(--space-2)">
+                <button class="btn btn-primary btn-compact" @click="
+                    const trigger = document.getElementById('dp-trigger').value;
+                    const decision = document.getElementById('dp-decision').value;
+                    const instrument = document.getElementById('dp-instrument').value;
+                    const size = document.getElementById('dp-size').value;
+                    if (!trigger || !decision || !instrument || !size) return;
+                    fetch('{{ '/thesis/%s/decision-points' % thesis.id }}', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({trigger, decision, instrument, size_pct: size})
+                    }).then(r => { if (r.ok) location.reload(); });
+                ">Save</button>
+                <button class="btn-ghost btn-compact" @click="showAddDP = false">Cancel</button>
+            </div>
+        </div>
+        {% endcall %}
+    </div>
+
+</div>
+{% endblock %}
+
+
+{% block panel %}
+<!-- Right context panel — loaded via HTMX -->
+<div class="panel-right" id="context-panel"
+     hx-get="/thesis/{{ thesis.id }}/panel"
+     hx-trigger="load"
+     hx-target="#context-panel"
+     hx-swap="innerHTML">
+</div>
+
+<script>
+    document.querySelector('.main-content').classList.add('panel-open');
+    document.addEventListener('htmx:afterRequest', function(e) {
+        if (e.detail.pathInfo && e.detail.pathInfo.requestPath.includes('/panel')) {
+            document.getElementById('context-panel').classList.add('visible');
+        }
+    });
+</script>
+{% endblock %}

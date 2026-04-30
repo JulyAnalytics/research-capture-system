@@ -1,0 +1,200 @@
+/* layout.css — Shell, left nav, main content, right panel. */
+
+/* ── Shell ───────────────────────────────────────────────────── */
+.shell {
+  display: flex;
+  min-height: 100vh;
+}
+
+/* ── Left nav ────────────────────────────────────────────────── */
+.nav-left {
+  width: 200px;
+  min-width: 200px;
+  position: fixed;
+  top: 0;
+  left: 0;
+  height: 100vh;
+  background: var(--color-recessed);
+  border-right: 1px solid var(--color-border);
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  z-index: 5;
+}
+
+.nav-identity {
+  padding: 20px var(--space-4) var(--space-4);
+  font-family: var(--font-data);
+  font-size: 14px;
+  color: var(--color-text-secondary);
+}
+
+.nav-divider {
+  height: 1px;
+  background: var(--color-border);
+  margin: var(--space-2) var(--space-3);
+}
+
+.nav-capture-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 36px;
+  margin: var(--space-3) 10px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  font-family: var(--font-ui);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+  cursor: pointer;
+}
+
+.nav-capture-btn:hover {
+  background: var(--color-bg);
+}
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: 34px;
+  padding: 0 10px;
+  font-family: var(--font-ui);
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  border-left: 2px solid transparent;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+.nav-item:hover {
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+}
+
+.nav-item.active {
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  font-weight: 500;
+  border-left-color: var(--color-text-primary);
+}
+
+.nav-item[data-layer] {
+  --layer-color: var(--color-text-secondary);
+}
+
+.nav-item[data-layer].active {
+  border-left-color: var(--layer-color);
+}
+
+[data-layer="analytical"] { --layer-color: var(--color-analytical); }
+[data-layer="operational"] { --layer-color: var(--color-operational); }
+[data-layer="learning"]    { --layer-color: var(--color-learning); }
+
+.nav-section-header {
+  padding: var(--space-3) 10px var(--space-1);
+  font-family: var(--font-ui);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+}
+
+.nav-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  padding: 0 10px;
+}
+
+.nav-chip {
+  font-family: var(--font-ui);
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 3px;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+
+.nav-chip.active {
+  background: var(--color-surface);
+  border-color: var(--color-border);
+  color: var(--color-text-primary);
+}
+
+.nav-chip:hover:not(.active) {
+  color: var(--color-text-primary);
+}
+
+.nav-spacer {
+  flex: 1;
+}
+
+.nav-status {
+  padding: var(--space-3) var(--space-4);
+  font-family: var(--font-ui);
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+}
+
+/* ── Main content ────────────────────────────────────────────── */
+.main-content {
+  margin-left: 200px;
+  flex: 1;
+  min-height: 100vh;
+  padding: var(--space-10) var(--space-8);
+  transition: margin-right 200ms ease-out;
+}
+
+.main-content.panel-open {
+  margin-right: 260px;
+}
+
+/* ── Right context panel ─────────────────────────────────────── */
+.panel-right {
+  position: fixed;
+  right: 0;
+  top: 0;
+  width: 260px;
+  height: 100vh;
+  background: var(--color-surface);
+  border-left: 1px solid var(--color-border);
+  box-shadow: var(--shadow-panel);
+  z-index: 10;
+  overflow-y: auto;
+  transform: translateX(260px);
+}
+
+.panel-right.visible {
+  transform: translateX(0);
+}
+
+.panel-section {
+  padding: 0 var(--space-4);
+}
+
+.panel-section-header {
+  padding: 14px var(--space-4) var(--space-2);
+  font-family: var(--font-ui);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+}
+
+.panel-section-content {
+  padding: 0 var(--space-4) 14px;
+  font-family: var(--font-ui);
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+
+.panel-section + .panel-section {
+  border-top: 1px solid var(--color-border-light);
+}
