@@ -14,7 +14,7 @@
                    class="capture-text-input"
                    placeholder="Capture..."
                    x-model="captureText"
-                   @keydown.enter.prevent="if (captureText.trim()) { window.location.href = '/ritual/evening?direct=1&text=' + encodeURIComponent(captureText.trim()); }"
+                   @keydown.enter.prevent="if (captureText.trim()) { window.location.href = '/observation/new?title=' + encodeURIComponent(captureText.trim()); }"
                    @keydown.escape="captureOpen = false; captureText = ''"
                    @blur="if (!captureText.trim()) captureOpen = false">
         </div>
@@ -31,10 +31,12 @@
          x-transition
          @click.away="createOpen = false"
          @keydown.window.escape="createOpen = false">
-        <a href="/ritual/evening?direct=1" class="capture-dropdown-item">Observation</a>
-        <a href="/ritual/evening?direct=1" class="capture-dropdown-item">Setup</a>
-        <a href="/ritual/evening?direct=1" class="capture-dropdown-item">Action</a>
+        <a href="/canvas/new" class="capture-dropdown-item">Canvas</a>
+        <a href="/thesis/new" class="capture-dropdown-item">Thesis</a>
+        <a href="/observation/new" class="capture-dropdown-item">Observation</a>
+        <a href="/setup/new" class="capture-dropdown-item">Setup</a>
         <a href="/trade/new" class="capture-dropdown-item">Trade</a>
+        <a href="/action/new" class="capture-dropdown-item">Action</a>
     </div>
 
 </div>

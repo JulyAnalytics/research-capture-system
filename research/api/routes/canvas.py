@@ -13,6 +13,8 @@ from api.models.canvas import (
     InvalidationConditionCreate,
     InvalidationConditionPatch,
 )
+from api.protocols.protocol1 import check_protocol1
+from api.protocols.protocol2 import check_protocol2
 
 router = APIRouter()
 
@@ -230,21 +232,12 @@ async def update_canvas(
         await db.rollback()
         raise
 
-    # Protocol 1: surface affected theses at mutation site
-    affected = await db.execute_fetchall(
-        """SELECT t.id, t.instrument, t.status
-           FROM thesis t
-           JOIN thesis_linked_canvases tlc ON t.id = tlc.thesis_id
-           WHERE tlc.canvas_id = ? AND t.status IN ('ready', 'active')""",
-        (canvas_id,),
-    )
-
+    protocol_1 = await check_protocol1(db, canvas_id)
+    protocol_2 = await check_protocol2(db)
     return {
         "canvas_id": canvas_id,
-        "protocol_1": {
-            "affected_theses": [dict(r) for r in affected],
-            "action_required": "Review kill conditions on each listed thesis against this canvas update.",
-        },
+        "protocol_1": protocol_1,
+        "protocol_2": protocol_2,
     }
 
 

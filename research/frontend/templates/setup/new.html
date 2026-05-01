@@ -1,0 +1,129 @@
+{% extends "base.html" %}
+{% from "components/badge.html" import badge %}
+
+{% block title %}File setup{% endblock %}
+
+{% block content %}
+<div x-data="{
+    selectedType: '',
+    selectedCanvasId: '',
+    selectedCanvasLabel: '',
+    selectedThesisId: '',
+    selectedThesisLabel: ''
+}">
+
+    <button onclick="history.back()" class="btn-ghost btn-compact" style="margin-bottom: var(--space-2); color: var(--color-text-secondary)">← Back</button>
+
+    <div style="margin-bottom: var(--space-6)">
+        <h1 style="font-family: var(--font-ui); font-size: var(--text-xl); font-weight: 500; margin: 0">File setup</h1>
+    </div>
+
+    <!-- Pre-file notice -->
+    <div style="font-family: var(--font-ui); font-size: 12px; color: var(--color-text-tertiary); font-style: italic; margin-bottom: var(--space-5)">
+        Setups cannot be edited after filing.
+    </div>
+
+    <!-- Name -->
+    <div style="margin-bottom: var(--space-4)">
+        <label style="font-family: var(--font-ui); font-size: var(--text-sm); color: var(--color-text-secondary); display: block; margin-bottom: var(--space-1)">Name</label>
+        <input type="text" class="form-input" id="setup-name" value="{{ prefill_name }}" placeholder="e.g. AAPL 200dma breakout" required>
+    </div>
+
+    <!-- Instrument + Timeframe + Date row -->
+    <div style="display: flex; gap: var(--space-4); margin-bottom: var(--space-4); flex-wrap: wrap">
+        <div style="flex: 1; min-width: 160px">
+            <label style="font-family: var(--font-ui); font-size: var(--text-sm); color: var(--color-text-secondary); display: block; margin-bottom: var(--space-1)">Instrument</label>
+            <input type="text" class="form-input" id="setup-instrument" placeholder="e.g. AAPL" required>
+        </div>
+        <div style="flex: 1; min-width: 120px">
+            <label style="font-family: var(--font-ui); font-size: var(--text-sm); color: var(--color-text-secondary); display: block; margin-bottom: var(--space-1)">Timeframe</label>
+            <input type="text" class="form-input" id="setup-timeframe" placeholder="e.g. daily, 4H" required>
+        </div>
+        <div style="flex: 1; min-width: 140px">
+            <label style="font-family: var(--font-ui); font-size: var(--text-sm); color: var(--color-text-secondary); display: block; margin-bottom: var(--space-1)">Date</label>
+            <input type="text" class="form-input" id="setup-date" value="{{ now_date }}">
+        </div>
+    </div>
+
+    <!-- Type selection cards -->
+    <div style="margin-bottom: var(--space-4)">
+        <label style="font-family: var(--font-ui); font-size: var(--text-sm); color: var(--color-text-secondary); display: block; margin-bottom: var(--space-2)">Type</label>
+        <div style="display: flex; gap: var(--space-4)">
+            <div style="flex: 1; height: 72px; border: 1px solid var(--color-border); border-radius: 6px; padding: var(--space-4); cursor: pointer; display: flex; flex-direction: column; justify-content: center"
+                 :style="selectedType === 'technical' ? 'border-color: var(--color-analytical); background: var(--color-analytical-bg)' : ''"
+                 @click="selectedType = 'technical'">
+                <span style="font-family: var(--font-ui); font-size: 14px; font-weight: 500; color: var(--color-text-primary)">Technical</span>
+                <span style="font-family: var(--font-ui); font-size: 11px; color: var(--color-text-secondary); margin-top: 2px">Chart structure, price action, key levels</span>
+            </div>
+            <div style="flex: 1; height: 72px; border: 1px solid var(--color-border); border-radius: 6px; padding: var(--space-4); cursor: pointer; display: flex; flex-direction: column; justify-content: center"
+                 :style="selectedType === 'vol' ? 'border-color: var(--color-analytical); background: var(--color-analytical-bg)' : ''"
+                 @click="selectedType = 'vol'">
+                <span style="font-family: var(--font-ui); font-size: 14px; font-weight: 500; color: var(--color-text-primary)">Vol</span>
+                <span style="font-family: var(--font-ui); font-size: 11px; color: var(--color-text-secondary); margin-top: 2px">IV, skew, options chain readings</span>
+            </div>
+            <div style="flex: 1; height: 72px; border: 1px solid var(--color-border); border-radius: 6px; padding: var(--space-4); cursor: pointer; display: flex; flex-direction: column; justify-content: center"
+                 :style="selectedType === 'flow' ? 'border-color: var(--color-analytical); background: var(--color-analytical-bg)' : ''"
+                 @click="selectedType = 'flow'">
+                <span style="font-family: var(--font-ui); font-size: 14px; font-weight: 500; color: var(--color-text-primary)">Flow</span>
+                <span style="font-family: var(--font-ui); font-size: 11px; color: var(--color-text-secondary); margin-top: 2px">Order flow, unusual activity, positioning</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Setup note -->
+    <div style="margin-bottom: var(--space-4)">
+        <label style="font-family: var(--font-ui); font-size: var(--text-sm); color: var(--color-text-secondary); display: block; margin-bottom: var(--space-1)">Setup note</label>
+        <textarea class="form-textarea" id="setup-note" rows="5"
+                  placeholder="Describe the setup structure in detail"
+                  style="font-family: var(--font-prose); font-size: var(--text-prose); line-height: var(--text-prose-lh); min-height: 100px"></textarea>
+    </div>
+
+    <!-- Canvas link (optional) -->
+    <div style="margin-bottom: var(--space-4)">
+        <label style="font-family: var(--font-ui); font-size: var(--text-sm); color: var(--color-text-secondary); display: block; margin-bottom: var(--space-1)">Linked canvas (optional)</label>
+        <select class="form-select" id="setup-canvas-select" @change="selectedCanvasId = $event.target.value">
+            <option value="">Select a canvas...</option>
+            {% for c in canvases %}
+            <option value="{{ c.id }}">{{ c.name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+
+    <!-- Thesis link (optional) -->
+    <div style="margin-bottom: var(--space-5)">
+        <label style="font-family: var(--font-ui); font-size: var(--text-sm); color: var(--color-text-secondary); display: block; margin-bottom: var(--space-1)">Linked thesis (optional)</label>
+        <input type="text" class="form-input" id="setup-thesis-typeahead" placeholder="Search theses..."
+               hx-get="/thesis/search" hx-trigger="input changed delay:300ms" hx-target="#setup-thesis-results" hx-vals='js:{q: this.value}'>
+        <div id="setup-thesis-results" style="margin-top: 4px"></div>
+    </div>
+
+    <!-- Submit -->
+    <div style="display: flex; gap: var(--space-2)">
+        <button class="btn btn-primary" @click="
+            const name = document.getElementById('setup-name').value.trim();
+            const instrument = document.getElementById('setup-instrument').value.trim();
+            const timeframe = document.getElementById('setup-timeframe').value.trim();
+            const date = document.getElementById('setup-date').value.trim();
+            const note = document.getElementById('setup-note').value.trim();
+            const thesisInput = document.getElementById('setup-thesis-typeahead');
+            const thesisId = thesisInput.dataset.selectedId || null;
+            const canvasId = selectedCanvasId || null;
+            if (!name || !instrument || !timeframe || !date || !note || !selectedType) return;
+
+            fetch('/setup', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({name, instrument, type: selectedType, timeframe, setup_note: note, date})
+            }).then(r => r.json()).then(data => {
+                if (!data.id) return;
+                const links = [];
+                if (canvasId) links.push(fetch('/setup/' + data.id + '/link-canvas/' + canvasId, {method: 'POST'}));
+                if (thesisId) links.push(fetch('/setup/' + data.id + '/link-thesis/' + thesisId, {method: 'POST'}));
+                Promise.all(links).then(() => { window.location.href = '/setup/' + data.id; });
+            });
+        ">File setup</button>
+        <button class="btn-ghost btn-compact" onclick="history.back()">Cancel</button>
+    </div>
+
+</div>
+{% endblock %}

@@ -18,7 +18,7 @@ async def _fetch_entities(type: Optional[str], db):
         rows = await db.execute_fetchall(
             """SELECT c.id, c.name, c.status, c.last_reviewed,
                       (SELECT COUNT(*) FROM thesis_linked_canvases tlc WHERE tlc.canvas_id = c.id) AS thesis_count,
-                      (SELECT COUNT(*) FROM observation_linked_canvases olc WHERE olc.canvas_id = c.id) AS observation_backlink_count
+                      (SELECT COUNT(*) FROM setup_linked_canvases slc WHERE slc.canvas_id = c.id) AS setup_backlink_count
                FROM canvas c
                ORDER BY c.last_reviewed DESC"""
         )
@@ -31,7 +31,7 @@ async def _fetch_entities(type: Optional[str], db):
                 "last_updated": r["last_reviewed"],
                 "links": {
                     "thesis_count": r["thesis_count"],
-                    "observation_backlink_count": r["observation_backlink_count"],
+                    "setup_backlink_count": r["setup_backlink_count"],
                 },
             })
 
@@ -61,11 +61,11 @@ async def _fetch_entities(type: Optional[str], db):
 
     if type is None or type == "observation":
         rows = await db.execute_fetchall(
-            """SELECT o.id, o.instrument, o.type, o.created_at,
-                      (SELECT GROUP_CONCAT(c.name, ', ')
-                       FROM observation_linked_canvases olc
-                       JOIN canvas c ON c.id = olc.canvas_id
-                       WHERE olc.observation_id = o.id) AS linked_canvas_name
+            """SELECT o.id, o.name, o.instrument, o.status, o.created_at,
+                      (SELECT GROUP_CONCAT(t.instrument, ', ')
+                       FROM observation_thesis_links otl
+                       JOIN thesis t ON t.id = otl.thesis_id
+                       WHERE otl.observation_id = o.id) AS linked_thesis_name
                FROM observation o
                ORDER BY o.created_at DESC"""
         )
@@ -73,17 +73,17 @@ async def _fetch_entities(type: Optional[str], db):
             results.append({
                 "entity_type": "observation",
                 "id": r["id"],
-                "display_name": f"{r['instrument']} ({r['type']})",
-                "status": r["type"],
+                "display_name": r["name"] or r["instrument"],
+                "status": r["status"],
                 "last_updated": r["created_at"],
                 "links": {
-                    "linked_canvas_name": (r["linked_canvas_name"] or ""),
+                    "linked_thesis_name": (r["linked_thesis_name"] or ""),
                 },
             })
 
     if type is None or type == "setup":
         rows = await db.execute_fetchall(
-            """SELECT s.id, s.instrument, s.status, s.created_at,
+            """SELECT s.id, s.name, s.instrument, s.type, s.created_at,
                       (SELECT GROUP_CONCAT(t.instrument, ', ')
                        FROM setup_thesis_links stl
                        JOIN thesis t ON t.id = stl.thesis_id
@@ -95,8 +95,8 @@ async def _fetch_entities(type: Optional[str], db):
             results.append({
                 "entity_type": "setup",
                 "id": r["id"],
-                "display_name": r["instrument"],
-                "status": r["status"],
+                "display_name": r["name"] or r["instrument"],
+                "status": r["type"],
                 "last_updated": r["created_at"],
                 "links": {
                     "linked_thesis_name": (r["linked_thesis_name"] or ""),
@@ -182,7 +182,7 @@ async def delete_entity(entity_type: str, entity_id: str, db=Depends(get_db)):
             await db.execute("DELETE FROM canvas_invalidation_conditions WHERE canvas_id = ?", (entity_id,))
             await db.execute("DELETE FROM canvas_version_history WHERE canvas_id = ?", (entity_id,))
             await db.execute("DELETE FROM thesis_linked_canvases WHERE canvas_id = ?", (entity_id,))
-            await db.execute("DELETE FROM observation_linked_canvases WHERE canvas_id = ?", (entity_id,))
+            await db.execute("DELETE FROM setup_linked_canvases WHERE canvas_id = ?", (entity_id,))
             await db.execute("DELETE FROM canvas WHERE id = ?", (entity_id,))
 
         elif entity_type == "thesis":
@@ -202,7 +202,8 @@ async def delete_entity(entity_type: str, entity_id: str, db=Depends(get_db)):
         elif entity_type == "setup":
             await db.execute("DELETE FROM setup_images WHERE setup_id = ?", (entity_id,))
             await db.execute("DELETE FROM setup_thesis_links WHERE setup_id = ?", (entity_id,))
-            await db.execute("DELETE FROM setup_observation_links WHERE setup_id = ?", (entity_id,))
+            await db.execute("DELETE FROM observation_setup_links WHERE setup_id = ?", (entity_id,))
+            await db.execute("DELETE FROM setup_linked_canvases WHERE setup_id = ?", (entity_id,))
             await db.execute("UPDATE action SET linked_setup_id = NULL WHERE linked_setup_id = ?", (entity_id,))
             await db.execute("UPDATE inbox SET routed_to_setup_id = NULL WHERE routed_to_setup_id = ?", (entity_id,))
             await db.execute("DELETE FROM setup WHERE id = ?", (entity_id,))
@@ -211,9 +212,8 @@ async def delete_entity(entity_type: str, entity_id: str, db=Depends(get_db)):
             await _delete_trade_cascade(db, entity_id)
 
         elif entity_type == "observation":
-            await db.execute("DELETE FROM observation_linked_canvases WHERE observation_id = ?", (entity_id,))
-            await db.execute("DELETE FROM observation_images WHERE observation_id = ?", (entity_id,))
-            await db.execute("DELETE FROM setup_observation_links WHERE observation_id = ?", (entity_id,))
+            await db.execute("DELETE FROM observation_thesis_links WHERE observation_id = ?", (entity_id,))
+            await db.execute("DELETE FROM observation_setup_links WHERE observation_id = ?", (entity_id,))
             await db.execute("DELETE FROM observation WHERE id = ?", (entity_id,))
 
         elif entity_type == "review":

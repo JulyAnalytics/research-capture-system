@@ -109,7 +109,7 @@ async def get_thesis(thesis_id: str, request: Request, db=Depends(get_db)):
     )
 
     linked_setups = await db.execute_fetchall(
-        """SELECT stl.setup_id, s.instrument, s.setup_type, s.status, stl.created_at
+        """SELECT stl.setup_id, s.name, s.instrument, s.type, stl.created_at
            FROM setup_thesis_links stl
            JOIN setup s ON s.id = stl.setup_id
            WHERE stl.thesis_id = ?
@@ -493,7 +493,7 @@ async def thesis_panel(thesis_id: str, request: Request, db=Depends(get_db)):
     )
 
     linked_setups = await db.execute_fetchall(
-        """SELECT stl.setup_id, s.instrument, s.setup_type, s.status
+        """SELECT stl.setup_id, s.name, s.instrument, s.type
            FROM setup_thesis_links stl
            JOIN setup s ON s.id = stl.setup_id
            WHERE stl.thesis_id = ?

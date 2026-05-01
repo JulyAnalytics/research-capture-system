@@ -1,119 +1,211 @@
 {% extends "base.html" %}
-{% from "components/badge.html" import badge %}
-{% from "components/chip.html" import chip %}
 
-{% block title %}New trade{% endblock %}
+{% block title %}New trade idea{% endblock %}
 
 {% block content %}
 <div x-data="{
-    selectedCanvas: '',
-    selectedCanvasId: '',
-    selectedThesisId: '',
-    showStep2: false,
-    canvases: [],
-    theses: []
+    name: '{{ prefill_name | e }}',
+    instrument: '',
+    instrumentType: 'equity',
+    ideaNote: '',
+    showFastPath: false,
+    canvasId: '',
+    thesisId: '',
+    entryRules: '',
+    exitRules: '',
+    submitting: false,
+    get isFastPath() {
+        return this.thesisId && this.entryRules && this.exitRules;
+    },
+    async submit() {
+        if (!this.name || !this.instrumentType) return;
+        this.submitting = true;
+        const body = {
+            name: this.name,
+            instrument_type: this.instrumentType,
+            instrument: this.instrument || null,
+            idea_note: this.ideaNote || null,
+        };
+        if (this.isFastPath) {
+            body.thesis_id = this.thesisId;
+            body.entry_rules_stated = this.entryRules;
+            body.exit_rules_stated = this.exitRules;
+        }
+        const r = await fetch('/trade', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(body)
+        });
+        if (r.ok) {
+            const d = await r.json();
+            window.location.href = '/trade/' + d.id;
+        } else {
+            this.submitting = false;
+        }
+    }
 }">
 
-    <!-- Back button / Cancel (change spec Task 013 delta) -->
-    <button onclick="history.back()" class="btn-ghost btn-compact" style="margin-bottom: var(--space-2); color: var(--color-text-secondary)">← Cancel</button>
+    <!-- Back button -->
+    <button onclick="history.back()" class="btn-ghost btn-compact"
+            style="margin-bottom: var(--space-2); color: var(--color-text-secondary)">← Cancel</button>
 
     <!-- Page header -->
     <div style="margin-bottom: var(--space-6)">
-        <h1 style="font-family: var(--font-ui); font-size: var(--text-xl); font-weight: 500; margin: 0">New trade</h1>
+        <div style="font-family: var(--font-ui); font-size: var(--text-sm); color: var(--color-text-secondary); margin-bottom: var(--space-1)">
+            Trade / New
+        </div>
+        <h1 style="font-family: var(--font-ui); font-size: var(--text-xl); font-weight: 500; margin: 0">Capture trade idea</h1>
     </div>
 
-    <!-- ── Step 1: Select context ────────────────────────────────────── -->
-    <div class="section-header">Step 1 — Select context</div>
-
-    {% if not canvases %}
-    <div style="font-family: var(--font-ui); font-size: var(--text-sm); color: var(--color-text-tertiary); padding: var(--space-4) 0">
-        No canvases available. Create a canvas first.
-    </div>
-    <button onclick="history.back()" class="btn btn-secondary btn-compact">Cancel</button>
-    {% else %}
-
-    <!-- Canvas typeahead -->
+    <!-- Name -->
     <div style="margin-bottom: var(--space-4)">
-        <label style="font-family: var(--font-ui); font-size: var(--text-sm); color: var(--color-text-secondary); display: block; margin-bottom: var(--space-1)">Canvas</label>
-        <input type="text" class="form-input" id="trade-canvas-typeahead" placeholder="Search canvases..."
-               hx-get="/canvas/search" hx-trigger="input changed delay:300ms" hx-target="#trade-canvas-results" hx-vals='js:{q: this.value}'>
-        <div id="trade-canvas-results" style="margin-top: 4px"></div>
-        <template x-if="selectedCanvas">
-            <div style="margin-top: var(--space-2)">
-                <span style="font-family: var(--font-ui); font-size: var(--text-sm); color: var(--color-text-primary)">Selected: </span>
-                <span x-text="selectedCanvas" style="font-family: var(--font-ui); font-size: var(--text-sm); font-weight: 500; color: var(--color-text-primary)"></span>
-            </div>
-        </template>
+        <label style="font-family: var(--font-ui); font-size: var(--text-sm); color: var(--color-text-secondary); display: block; margin-bottom: var(--space-1)">
+            Name <span style="color: var(--color-text-tertiary)">(required)</span>
+        </label>
+        <input type="text" class="form-input" x-model="name" placeholder="e.g. AAPL breakout long">
     </div>
 
-    <!-- Thesis typeahead (populates after canvas selection) -->
+    <!-- Instrument -->
     <div style="margin-bottom: var(--space-4)">
-        <label style="font-family: var(--font-ui); font-size: var(--text-sm); color: var(--color-text-secondary); display: block; margin-bottom: var(--space-1)">Thesis</label>
-        <template x-if="selectedCanvasId">
-            <div>
-                <input type="text" class="form-input" id="trade-thesis-typeahead" placeholder="Search theses..."
-                       hx-get="/thesis/search" hx-trigger="input changed delay:300ms" hx-target="#trade-thesis-results"
-                       :hx-vals="JSON.stringify({q: document.getElementById('trade-thesis-typeahead')?.value || '', canvas_id: selectedCanvasId})"
-                       x-init="$nextTick(() => { $el.setAttribute('hx-vals', JSON.stringify({q: '', canvas_id: selectedCanvasId})); htmx.process($el) })">
-                <div id="trade-thesis-results" style="margin-top: 4px"></div>
-            </div>
-        </template>
-        <template x-if="!selectedCanvasId">
-            <div style="font-family: var(--font-ui); font-size: var(--text-sm); color: var(--color-text-tertiary)">Select a canvas first.</div>
-        </template>
+        <label style="font-family: var(--font-ui); font-size: var(--text-sm); color: var(--color-text-secondary); display: block; margin-bottom: var(--space-1)">
+            Ticker / instrument <span style="color: var(--color-text-tertiary)">(optional)</span>
+        </label>
+        <input type="text" class="form-input" x-model="instrument" placeholder="e.g. AAPL" style="max-width: 200px">
     </div>
 
-    <!-- ── Step 2: Trade fields ──────────────────────────────────────── -->
-    <template x-if="selectedThesisId">
-        <div>
-            <div class="section-header" style="margin-top: var(--space-6)">Step 2 — Trade details</div>
+    <!-- Instrument type -->
+    <div style="margin-bottom: var(--space-4)">
+        <label style="font-family: var(--font-ui); font-size: var(--text-sm); color: var(--color-text-secondary); display: block; margin-bottom: var(--space-1)">
+            Instrument type <span style="color: var(--color-text-tertiary)">(required)</span>
+        </label>
+        <select class="form-select" x-model="instrumentType" style="max-width: 240px">
+            <option value="equity">Equity</option>
+            <option value="option">Option</option>
+            <option value="future">Future</option>
+            <option value="fx">FX</option>
+            <option value="other">Other</option>
+        </select>
+    </div>
 
-            <div style="margin-bottom: var(--space-4)">
-                <label style="font-family: var(--font-ui); font-size: var(--text-sm); color: var(--color-text-secondary); display: block; margin-bottom: var(--space-1)">Instrument type</label>
-                <select class="form-select" id="trade-instrument-type">
-                    <option value="equity">Equity</option>
-                    <option value="option">Option</option>
-                    <option value="future">Future</option>
-                    <option value="fx">FX</option>
-                    <option value="other">Other</option>
-                </select>
+    <!-- Idea note -->
+    <div style="margin-bottom: var(--space-5)">
+        <label style="font-family: var(--font-ui); font-size: var(--text-sm); color: var(--color-text-secondary); display: block; margin-bottom: var(--space-1)">
+            Idea note <span style="color: var(--color-text-tertiary)">(optional)</span>
+        </label>
+        <textarea class="form-textarea" x-model="ideaNote" rows="3"
+                  placeholder="What's the core insight?"
+                  style="font-family: var(--font-prose); min-height: 70px"></textarea>
+    </div>
+
+    <!-- Fast-path collapsible -->
+    <div style="border: 1px solid var(--color-border); border-radius: var(--radius-md); margin-bottom: var(--space-5)">
+        <button type="button"
+                style="width: 100%; display: flex; align-items: center; justify-content: space-between;
+                       padding: var(--space-3) var(--space-4); background: none; border: none; cursor: pointer;
+                       font-family: var(--font-ui); font-size: var(--text-sm); color: var(--color-text-secondary)"
+                @click="showFastPath = !showFastPath">
+            <span>Link to thesis now <span style="color: var(--color-text-tertiary)">(optional — skip to activate later)</span></span>
+            <span x-text="showFastPath ? '▲' : '▼'" style="font-size: 10px; color: var(--color-text-tertiary)"></span>
+        </button>
+
+        <div x-show="showFastPath" x-transition style="padding: 0 var(--space-4) var(--space-4)">
+            <!-- Canvas typeahead -->
+            <div style="margin-bottom: var(--space-3)">
+                <label style="font-family: var(--font-ui); font-size: var(--text-sm); color: var(--color-text-secondary); display: block; margin-bottom: var(--space-1)">Canvas</label>
+                <input type="text" class="form-input" id="new-trade-canvas-typeahead"
+                       placeholder="Search canvases..."
+                       hx-get="/canvas/search"
+                       hx-trigger="input changed delay:300ms"
+                       hx-target="#new-trade-canvas-results"
+                       hx-vals='js:{q: this.value}'>
+                <div id="new-trade-canvas-results" style="margin-top: 4px"></div>
+                <template x-if="canvasId">
+                    <div style="margin-top: var(--space-1); font-family: var(--font-ui); font-size: var(--text-sm); color: var(--color-text-secondary)">
+                        Canvas selected
+                    </div>
+                </template>
             </div>
 
-            <div style="margin-bottom: var(--space-4)">
-                <label style="font-family: var(--font-ui); font-size: var(--text-sm); color: var(--color-text-secondary); display: block; margin-bottom: var(--space-1)">Entry rules</label>
-                <textarea class="form-textarea" id="trade-entry-rules" rows="3" placeholder="e.g. Buy on breakout above 200dma" style="min-height: 60px"></textarea>
+            <!-- Thesis typeahead (shown after canvas picked) -->
+            <div style="margin-bottom: var(--space-3)">
+                <label style="font-family: var(--font-ui); font-size: var(--text-sm); color: var(--color-text-secondary); display: block; margin-bottom: var(--space-1)">Thesis</label>
+                <template x-if="canvasId">
+                    <div>
+                        <input type="text" class="form-input" id="new-trade-thesis-typeahead"
+                               placeholder="Search theses..."
+                               hx-get="/thesis/search"
+                               hx-trigger="input changed delay:300ms"
+                               hx-target="#new-trade-thesis-results"
+                               :hx-vals="JSON.stringify({q: document.getElementById('new-trade-thesis-typeahead')?.value || '', canvas_id: canvasId})"
+                               x-init="$nextTick(() => { $el.setAttribute('hx-vals', JSON.stringify({q: '', canvas_id: canvasId})); htmx.process($el) })">
+                        <div id="new-trade-thesis-results" style="margin-top: 4px"></div>
+                    </div>
+                </template>
+                <template x-if="!canvasId">
+                    <div style="font-family: var(--font-ui); font-size: var(--text-sm); color: var(--color-text-tertiary)">Select a canvas first.</div>
+                </template>
+                <template x-if="thesisId">
+                    <div style="margin-top: var(--space-1); font-family: var(--font-ui); font-size: var(--text-sm); color: var(--color-text-secondary)">
+                        Thesis selected
+                    </div>
+                </template>
             </div>
 
-            <div style="margin-bottom: var(--space-4)">
-                <label style="font-family: var(--font-ui); font-size: var(--text-sm); color: var(--color-text-secondary); display: block; margin-bottom: var(--space-1)">Exit rules</label>
-                <textarea class="form-textarea" id="trade-exit-rules" rows="3" placeholder="e.g. Stop at 190, target at 220" style="min-height: 60px"></textarea>
+            <!-- Entry rules -->
+            <div style="margin-bottom: var(--space-3)">
+                <label style="font-family: var(--font-ui); font-size: var(--text-sm); color: var(--color-text-secondary); display: block; margin-bottom: var(--space-1)">
+                    Entry rules <span style="color: var(--color-text-tertiary)">(required to open)</span>
+                </label>
+                <textarea class="form-textarea" x-model="entryRules" rows="2"
+                          placeholder="e.g. Buy on breakout above 200dma with volume" style="min-height: 55px"></textarea>
             </div>
 
-            <div style="display: flex; gap: var(--space-3)">
-                <button class="btn btn-primary" @click="
-                    const instrumentType = document.getElementById('trade-instrument-type').value;
-                    const entryRules = document.getElementById('trade-entry-rules').value;
-                    const exitRules = document.getElementById('trade-exit-rules').value;
-                    if (!entryRules || !exitRules) return;
-                    fetch('/trade', {
-                        method: 'POST',
-                        headers: {'Content-Type': 'application/json'},
-                        body: JSON.stringify({
-                            thesis_id: selectedThesisId,
-                            instrument_type: instrumentType,
-                            entry_rules_stated: entryRules,
-                            exit_rules_stated: exitRules
-                        })
-                    }).then(r => r.json()).then(data => {
-                        if (data.id) window.location.href = '/trade/' + data.id;
-                    });
-                ">Create trade</button>
-                <button class="btn-ghost" onclick="history.back()">Cancel</button>
+            <!-- Exit rules -->
+            <div style="margin-bottom: var(--space-2)">
+                <label style="font-family: var(--font-ui); font-size: var(--text-sm); color: var(--color-text-secondary); display: block; margin-bottom: var(--space-1)">
+                    Exit rules <span style="color: var(--color-text-tertiary)">(required to open)</span>
+                </label>
+                <textarea class="form-textarea" x-model="exitRules" rows="2"
+                          placeholder="e.g. Stop at 190, target at 220" style="min-height: 55px"></textarea>
             </div>
         </div>
-    </template>
+    </div>
 
-    {% endif %}
+    <!-- Submit -->
+    <div style="display: flex; gap: var(--space-3); align-items: center">
+        <button class="btn btn-primary"
+                :disabled="!name || !instrumentType || submitting"
+                @click="submit()">
+            <span x-text="submitting ? 'Saving…' : (isFastPath ? 'Open trade' : 'Capture idea')"></span>
+        </button>
+        <button class="btn-ghost" onclick="history.back()">Cancel</button>
+    </div>
 
 </div>
+
+<script>
+// Canvas/thesis search result click handlers — set Alpine state from HTMX results
+document.addEventListener('htmx:afterSwap', function(e) {
+    if (e.target.id === 'new-trade-canvas-results') {
+        e.target.querySelectorAll('[data-canvas-id]').forEach(function(el) {
+            el.addEventListener('click', function() {
+                const comp = Alpine.$data(document.querySelector('[x-data]'));
+                comp.canvasId = el.dataset.canvasId;
+                document.getElementById('new-trade-canvas-typeahead').value = el.textContent.trim();
+                e.target.innerHTML = '';
+            });
+        });
+    }
+    if (e.target.id === 'new-trade-thesis-results') {
+        e.target.querySelectorAll('[data-thesis-id]').forEach(function(el) {
+            el.addEventListener('click', function() {
+                const comp = Alpine.$data(document.querySelector('[x-data]'));
+                comp.thesisId = el.dataset.thesisId;
+                document.getElementById('new-trade-thesis-typeahead').value = el.textContent.trim();
+                e.target.innerHTML = '';
+            });
+        });
+    }
+});
+</script>
 {% endblock %}

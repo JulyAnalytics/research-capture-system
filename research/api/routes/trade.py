@@ -8,6 +8,7 @@ from ulid import ULID
 from api.database import get_db
 from api.models.trade import (
     TradeCreate,
+    TradeActivate,
     TradeClose,
     TradeEntryCreate,
     TradeExitCreate,
@@ -35,30 +36,57 @@ async def trade_new_form(request: Request, db=Depends(get_db)):
         "request": request,
         "canvases": [dict(r) for r in canvases],
         "now_date": now.strftime("%Y-%m-%d"),
+        "prefill_name": request.query_params.get("title", ""),
     })
 
 
 @router.post("")
 async def create_trade(payload: TradeCreate, db=Depends(get_db)):
-    thesis_rows = await db.execute_fetchall(
-        "SELECT id, narrative FROM thesis WHERE id = ?", (payload.thesis_id,)
-    )
-    if not thesis_rows:
-        raise HTTPException(404, "Thesis not found")
+    """
+    Create a trade. Default status is 'idea'.
 
-    thesis_snapshot = dict(thesis_rows[0])["narrative"]
+    Fast-path to 'active': if thesis_id, entry_rules_stated, and exit_rules_stated
+    are all provided, the trade is inserted as 'idea' then immediately updated to
+    'active' in the same transaction. This ensures trade_active_gate fires on the
+    UPDATE — inserting directly as 'active' would bypass the trigger.
+    """
     trade_id = str(ULID())
+    fast_path = bool(
+        payload.thesis_id and
+        payload.entry_rules_stated and
+        payload.exit_rules_stated
+    )
+    thesis_snapshot = None
+
+    if fast_path:
+        thesis_rows = await db.execute_fetchall(
+            "SELECT narrative FROM thesis WHERE id = ?", (payload.thesis_id,)
+        )
+        if not thesis_rows:
+            raise HTTPException(404, "Thesis not found")
+        thesis_snapshot = dict(thesis_rows[0])["narrative"]
 
     await db.execute("BEGIN")
     try:
+        # Always insert as 'idea' first — fast-path then updates to 'active'.
+        # This ensures trade_active_gate fires on the UPDATE transition,
+        # enforcing all invariants at the DB layer. See schema DECISION comment.
         await db.execute(
-            """INSERT INTO trade (id, thesis_id, instrument_type,
-                  entry_rules_stated, exit_rules_stated, thesis_snapshot)
-               VALUES (?, ?, ?, ?, ?, ?)""",
-            (trade_id, payload.thesis_id, payload.instrument_type,
+            """INSERT INTO trade (
+                   id, name, instrument, idea_note,
+                   thesis_id, instrument_type,
+                   entry_rules_stated, exit_rules_stated, thesis_snapshot,
+                   status
+               ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'idea')""",
+            (trade_id, payload.name, payload.instrument, payload.idea_note,
+             payload.thesis_id, payload.instrument_type,
              payload.entry_rules_stated, payload.exit_rules_stated,
              thesis_snapshot),
         )
+        if fast_path:
+            await db.execute(
+                "UPDATE trade SET status = 'active' WHERE id = ?", (trade_id,)
+            )
         await db.commit()
     except IntegrityError as e:
         await db.rollback()
@@ -66,7 +94,9 @@ async def create_trade(payload: TradeCreate, db=Depends(get_db)):
     except Exception:
         await db.rollback()
         raise
-    return {"id": trade_id}
+
+    final_status = 'active' if fast_path else 'idea'
+    return {"id": trade_id, "status": final_status}
 
 
 @router.get("/{trade_id}")
@@ -132,6 +162,14 @@ async def get_trade(trade_id: str, request: Request, db=Depends(get_db)):
     from api.protocols.protocol4 import check_protocol4
     protocol4_flags = await check_protocol4(db, trade_id=trade_id)
 
+    # Fetch canvases for idea-state activate form
+    canvases = []
+    if trade["status"] == "idea":
+        canvas_rows = await db.execute_fetchall(
+            "SELECT id, name FROM canvas ORDER BY last_reviewed DESC"
+        )
+        canvases = [dict(r) for r in canvas_rows]
+
     return templates.TemplateResponse("trade/detail.html", {
         "request": request,
         "trade": trade,
@@ -143,7 +181,107 @@ async def get_trade(trade_id: str, request: Request, db=Depends(get_db)):
         "review": review,
         "now_date": now.strftime("%Y-%m-%d"),
         "protocol4_flags": protocol4_flags,
+        "canvases": canvases,
     })
+
+
+@router.patch("/{trade_id}/activate")
+async def activate_trade(trade_id: str, payload: TradeActivate, db=Depends(get_db)):
+    """
+    Transition a trade from idea → active.
+
+    Populates thesis_snapshot server-side from thesis.narrative at this moment.
+    trade_active_gate trigger enforces all required fields.
+
+    Thesis substitution policy: if the trade already has a thesis_id and the
+    payload provides a different one, returns 409 unless force_thesis_change=True.
+    """
+    rows = await db.execute_fetchall(
+        "SELECT id, status, thesis_id FROM trade WHERE id = ?", (trade_id,)
+    )
+    if not rows:
+        raise HTTPException(404, "Trade not found")
+    trade = dict(rows[0])
+
+    if trade["status"] != "idea":
+        raise HTTPException(
+            400,
+            f"Trade is {trade['status']} — can only activate from idea"
+        )
+
+    existing_thesis_id = trade.get("thesis_id")
+    if (existing_thesis_id and
+            payload.thesis_id != existing_thesis_id and
+            not payload.force_thesis_change):
+        existing_rows = await db.execute_fetchall(
+            "SELECT instrument FROM thesis WHERE id = ?", (existing_thesis_id,)
+        )
+        instrument = dict(existing_rows[0])["instrument"] if existing_rows else existing_thesis_id
+        raise HTTPException(
+            409,
+            f"Trade already linked to thesis {instrument} ({existing_thesis_id}). "
+            f"Set force_thesis_change=true to override."
+        )
+
+    thesis_rows = await db.execute_fetchall(
+        "SELECT narrative FROM thesis WHERE id = ?", (payload.thesis_id,)
+    )
+    if not thesis_rows:
+        raise HTTPException(404, "Thesis not found")
+    thesis_snapshot = dict(thesis_rows[0])["narrative"]
+
+    await db.execute("BEGIN")
+    try:
+        await db.execute(
+            """UPDATE trade SET
+                   thesis_id = ?,
+                   entry_rules_stated = ?,
+                   exit_rules_stated = ?,
+                   thesis_snapshot = ?,
+                   status = 'active'
+               WHERE id = ?""",
+            (payload.thesis_id, payload.entry_rules_stated,
+             payload.exit_rules_stated, thesis_snapshot, trade_id),
+        )
+        await db.commit()
+    except IntegrityError as e:
+        await db.rollback()
+        raise HTTPException(400, str(e))
+    except Exception:
+        await db.rollback()
+        raise
+
+    return {"id": trade_id, "status": "active"}
+
+
+@router.patch("/{trade_id}/discard")
+async def discard_trade(trade_id: str, db=Depends(get_db)):
+    """
+    Discard an idea trade (idea → discarded). Terminal state.
+    Only idea trades can be discarded — active trades must be closed.
+    """
+    rows = await db.execute_fetchall(
+        "SELECT id, status FROM trade WHERE id = ?", (trade_id,)
+    )
+    if not rows:
+        raise HTTPException(404, "Trade not found")
+    if dict(rows[0])["status"] != "idea":
+        raise HTTPException(400, "Only idea trades can be discarded")
+
+    await db.execute("BEGIN")
+    try:
+        await db.execute(
+            "UPDATE trade SET status = 'discarded' WHERE id = ?", (trade_id,)
+        )
+        await db.commit()
+    except IntegrityError as e:
+        await db.rollback()
+        raise HTTPException(400, str(e))
+    except Exception:
+        await db.rollback()
+        raise
+
+    return {"id": trade_id, "status": "discarded"}
 
 
 @router.patch("/{trade_id}/close")
@@ -156,8 +294,13 @@ async def close_trade(
     if not rows:
         raise HTTPException(404, "Trade not found")
 
-    from datetime import datetime
-    now = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+    if dict(rows[0])["status"] != "active":
+        raise HTTPException(
+            400,
+            f"Trade is {dict(rows[0])['status']} — only active trades can be closed"
+        )
+
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
     await db.execute("BEGIN")
     try:

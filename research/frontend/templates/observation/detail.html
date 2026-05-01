@@ -1,0 +1,184 @@
+{% extends "base.html" %}
+{% from "components/badge.html" import badge %}
+{% from "components/chip.html" import chip %}
+{% from "components/inline_form.html" import inline_form %}
+
+{% block title %}Observation / {{ observation.name }}{% endblock %}
+
+{% block content %}
+<div x-data="{
+    showPassForm: false,
+    passReason: '',
+    passType: ''
+}">
+
+    <button onclick="history.back()" class="btn-ghost btn-compact" style="margin-bottom: var(--space-2); color: var(--color-text-secondary)">← Back</button>
+
+    <!-- Breadcrumb -->
+    <div style="font-family: var(--font-ui); font-size: var(--text-sm); color: var(--color-text-secondary); margin-bottom: var(--space-4)">
+        <span>Observation</span> <span style="margin: 0 6px">/</span>
+        <span style="color: var(--color-text-primary); font-weight: 500">{{ observation.name }}</span>
+    </div>
+
+    <!-- Entity identity bar -->
+    <div style="display: flex; align-items: center; gap: var(--space-4); margin-bottom: var(--space-6); padding-left: 12px; border-left: 3px solid var(--color-operational)">
+        <h1 style="font-family: var(--font-ui); font-size: var(--text-xl); font-weight: 500; margin: 0">{{ observation.name }}</h1>
+        {{ badge(status=observation.status) }}
+        <span style="font-family: var(--font-data); font-size: var(--text-sm); color: var(--color-text-secondary)">{{ observation.instrument }}</span>
+        <span style="font-family: var(--font-data); font-size: var(--text-sm); color: var(--color-text-tertiary)">{{ observation.date }}</span>
+
+        {% if observation.status == 'watching' %}
+        <div style="margin-left: auto; display: flex; gap: var(--space-2)">
+            {% if linked_theses %}
+            <button class="btn btn-secondary btn-compact"
+                    @click="
+                        fetch('{{ '/observation/%s/status' % observation.id }}', {
+                            method: 'PATCH',
+                            headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify({status: 'taken'})
+                        }).then(r => { if (r.ok) location.reload(); else r.json().then(d => alert(d.detail || 'Error')); });
+                    ">Take</button>
+            {% else %}
+            <span style="font-family: var(--font-ui); font-size: var(--text-sm); color: var(--color-text-tertiary); font-style: italic">Link a thesis to take</span>
+            {% endif %}
+            <button class="btn btn-ghost btn-compact" style="color: var(--color-text-secondary)"
+                    @click="showPassForm = !showPassForm">Pass</button>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Note (read-only prose) -->
+    <div class="section-header">Note</div>
+    <div style="font-family: var(--font-prose); font-size: var(--text-prose); line-height: var(--text-prose-lh); color: var(--color-text-primary); padding: var(--space-3) 0; margin-bottom: var(--space-4)">
+        {{ observation.note }}
+    </div>
+
+    <!-- Pass form (6.12 pattern) -->
+    <template x-if="showPassForm">
+        <div style="margin-bottom: var(--space-6)">
+            {% call inline_form(id="pass-obs-form") %}
+            <div style="margin-bottom: var(--space-3)">
+                <label style="font-family: var(--font-ui); font-size: var(--text-sm); color: var(--color-text-secondary); display: block; margin-bottom: var(--space-1)">Why are you passing this observation?</label>
+                <textarea class="form-textarea" x-model="passReason" rows="3" placeholder="Required" style="min-height: 60px"></textarea>
+            </div>
+            <div style="display: flex; gap: var(--space-3); margin-bottom: var(--space-3)">
+                <button style="flex: 1; height: 48px; border: 1px solid var(--color-border); border-radius: 6px; background: transparent; cursor: pointer; padding: 0 var(--space-3); display: flex; flex-direction: column; justify-content: center"
+                        :style="passType === 'analytical' ? 'background: var(--color-recessed); border-color: var(--color-text-primary); font-weight: 500' : ''"
+                        @click="passType = 'analytical'">
+                    <span style="font-family: var(--font-ui); font-size: 14px; color: var(--color-text-primary)">Analytical</span>
+                    <span style="font-family: var(--font-ui); font-size: 11px; color: var(--color-text-tertiary)">The observation no longer meets your criteria.</span>
+                </button>
+                <button style="flex: 1; height: 48px; border: 1px solid var(--color-border); border-radius: 6px; background: transparent; cursor: pointer; padding: 0 var(--space-3); display: flex; flex-direction: column; justify-content: center"
+                        :style="passType === 'psychological' ? 'background: var(--color-recessed); border-color: var(--color-text-primary); font-weight: 500' : ''"
+                        @click="passType = 'psychological'">
+                    <span style="font-family: var(--font-ui); font-size: 14px; color: var(--color-text-primary)">Psychological</span>
+                    <span style="font-family: var(--font-ui); font-size: 11px; color: var(--color-text-tertiary)">You are avoiding this for non-analytical reasons.</span>
+                </button>
+            </div>
+            <div style="display: flex; gap: var(--space-2)">
+                <button class="btn btn-primary btn-compact"
+                        :disabled="!passReason.trim() || !passType"
+                        @click="
+                            fetch('{{ '/observation/%s/status' % observation.id }}', {
+                                method: 'PATCH',
+                                headers: {'Content-Type': 'application/json'},
+                                body: JSON.stringify({status: 'passed', passed_reason: passReason, passed_reason_type: passType})
+                            }).then(r => { if (r.ok) location.reload(); });
+                        ">Pass observation</button>
+                <button class="btn-ghost btn-compact" @click="showPassForm = false">Cancel</button>
+            </div>
+            {% endcall %}
+        </div>
+    </template>
+
+    <!-- Show passed info if already passed -->
+    {% if observation.status == 'passed' and observation.passed_reason %}
+    <div style="background: var(--color-recessed); border-radius: 4px; padding: var(--space-3); margin-bottom: var(--space-4)">
+        <div style="font-family: var(--font-ui); font-size: var(--text-xs); color: var(--color-text-tertiary); text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: var(--space-1)">Passed — {{ observation.passed_reason_type }}</div>
+        <div style="font-family: var(--font-prose); font-size: 13px; color: var(--color-text-secondary)">{{ observation.passed_reason }}</div>
+    </div>
+    {% endif %}
+
+    <!-- Linked theses -->
+    <div class="section-header">Linked theses</div>
+    {% if linked_theses %}
+    <div style="display: flex; gap: var(--space-2); flex-wrap: wrap; margin-bottom: var(--space-2)">
+        {% for t in linked_theses %}
+        {{ chip(label=t.instrument, layer="analytical", href="/thesis/" ~ t.thesis_id, badge_status=t.status) }}
+        {% endfor %}
+    </div>
+    {% else %}
+    <div style="font-family: var(--font-ui); font-size: var(--text-sm); color: var(--color-text-tertiary); margin-bottom: var(--space-2)">No linked theses.</div>
+    {% endif %}
+
+    <!-- Add thesis link -->
+    {% if observation.status == 'watching' %}
+    <div style="margin-bottom: var(--space-6)" x-data="{ showAddThesis: false }">
+        <div x-show="!showAddThesis" style="color: var(--color-text-tertiary); cursor: pointer; padding: var(--space-1) 0; font-size: var(--text-sm)" @click="showAddThesis = true">+ Link thesis</div>
+        <div x-show="showAddThesis" x-transition>
+            {% call inline_form(id="add-thesis-obs-form") %}
+            <div style="display: flex; gap: var(--space-3); align-items: flex-end; flex-wrap: wrap">
+                <div style="flex: 1; min-width: 200px">
+                    <label style="font-family: var(--font-ui); font-size: var(--text-xs); color: var(--color-text-secondary); display: block; margin-bottom: 4px">Thesis</label>
+                    <input type="text" class="form-input" id="add-thesis-typeahead" placeholder="Search theses..."
+                           hx-get="/thesis/search" hx-trigger="input changed delay:300ms" hx-target="#add-thesis-obs-results" hx-vals='js:{q: this.value}'>
+                    <div id="add-thesis-obs-results" style="margin-top: 4px"></div>
+                </div>
+                <div style="display: flex; gap: var(--space-2)">
+                    <button class="btn btn-primary btn-compact" @click="
+                        const tid = document.getElementById('add-thesis-typeahead').dataset.selectedId;
+                        if (!tid) return;
+                        fetch('{{ '/observation/%s/link-thesis/' % observation.id }}' + tid, {method: 'POST'})
+                            .then(r => { if (r.ok) location.reload(); });
+                    ">Link</button>
+                    <button class="btn-ghost btn-compact" @click="showAddThesis = false">Cancel</button>
+                </div>
+            </div>
+            {% endcall %}
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Linked setups -->
+    <div class="section-header">Linked setups</div>
+    {% if linked_setups %}
+    <div style="display: flex; gap: var(--space-2); flex-wrap: wrap; margin-bottom: var(--space-2)">
+        {% for s in linked_setups %}
+        {{ chip(label=s.name ~ " — " ~ s.instrument, layer="operational", href="/setup/" ~ s.setup_id) }}
+        {% endfor %}
+    </div>
+    {% else %}
+    <div style="font-family: var(--font-ui); font-size: var(--text-sm); color: var(--color-text-tertiary); margin-bottom: var(--space-2)">No linked setups.</div>
+    {% endif %}
+
+    <!-- Add setup link -->
+    <div style="margin-bottom: var(--space-6)" x-data="{ showAddSetup: false }">
+        <div x-show="!showAddSetup" style="color: var(--color-text-tertiary); cursor: pointer; padding: var(--space-1) 0; font-size: var(--text-sm)" @click="showAddSetup = true">+ Link setup</div>
+        <div x-show="showAddSetup" x-transition>
+            {% call inline_form(id="add-setup-obs-form") %}
+            <div style="display: flex; gap: var(--space-3); align-items: flex-end; flex-wrap: wrap">
+                <div style="flex: 1; min-width: 200px">
+                    <label style="font-family: var(--font-ui); font-size: var(--text-xs); color: var(--color-text-secondary); display: block; margin-bottom: 4px">Setup</label>
+                    <select class="form-select" id="add-setup-select">
+                        <option value="">Select a setup...</option>
+                        {% for s in all_setups %}
+                        <option value="{{ s.id }}">{{ s.name }} — {{ s.instrument }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div style="display: flex; gap: var(--space-2)">
+                    <button class="btn btn-primary btn-compact" @click="
+                        const sid = document.getElementById('add-setup-select').value;
+                        if (!sid) return;
+                        fetch('{{ '/observation/%s/link-setup/' % observation.id }}' + sid, {method: 'POST'})
+                            .then(r => { if (r.ok) location.reload(); });
+                    ">Link</button>
+                    <button class="btn-ghost btn-compact" @click="showAddSetup = false">Cancel</button>
+                </div>
+            </div>
+            {% endcall %}
+        </div>
+    </div>
+
+</div>
+{% endblock %}

@@ -1,31 +1,66 @@
+from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.templating import Jinja2Templates
 from pathlib import Path
 from sqlite3 import IntegrityError
 from ulid import ULID
 from api.database import get_db
-from api.models.setup import SetupCreate, SetupStatusTransition
+from api.models.setup import SetupCreate
 
 router = APIRouter()
-
 FRONTEND_DIR = Path(__file__).parent.parent.parent / "frontend"
 templates = Jinja2Templates(directory=str(FRONTEND_DIR / "templates"))
 
 
-# ─── SETUP CRUD ───────────────────────────────────────────────────────────────
+@router.get("/new")
+async def setup_new(request: Request, db=Depends(get_db)):
+    """
+    Render the setup creation form.
+    Passes thesis and canvas lists for optional linking at creation time.
+    """
+    theses = await db.execute_fetchall(
+        "SELECT id, instrument, status FROM thesis "
+        "WHERE status IN ('building','ready','active') ORDER BY instrument ASC"
+    )
+    canvases = await db.execute_fetchall(
+        "SELECT id, name FROM canvas ORDER BY last_reviewed DESC LIMIT 20"
+    )
+    now = datetime.now(timezone.utc)
+    return templates.TemplateResponse("setup/new.html", {
+        "request": request,
+        "theses": [dict(r) for r in theses],
+        "canvases": [dict(r) for r in canvases],
+        "now_date": now.strftime("%Y-%m-%d"),
+        "prefill_name": request.query_params.get("title", ""),
+    })
 
 
 @router.post("")
 async def create_setup(payload: SetupCreate, db=Depends(get_db)):
+    """
+    Create a setup (append-only after creation — no update routes exist).
+
+    Args:
+        payload: SetupCreate
+        db:      aiosqlite connection
+
+    Returns: {id: str}
+
+    Side effects: inserts setup row; trigger logs to entity_events.
+    """
     setup_id = str(ULID())
     await db.execute("BEGIN")
     try:
         await db.execute(
-            """INSERT INTO setup (id, instrument, setup_type, note, date)
-               VALUES (?, ?, ?, ?, ?)""",
-            (setup_id, payload.instrument, payload.setup_type, payload.note, payload.date),
+            """INSERT INTO setup (id, name, instrument, type, timeframe, setup_note, date)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (setup_id, payload.name, payload.instrument, payload.type,
+             payload.timeframe, payload.setup_note, payload.date),
         )
         await db.commit()
+    except IntegrityError as e:
+        await db.rollback()
+        raise HTTPException(400, str(e))
     except Exception:
         await db.rollback()
         raise
@@ -34,6 +69,10 @@ async def create_setup(payload: SetupCreate, db=Depends(get_db)):
 
 @router.get("/{setup_id}")
 async def get_setup(setup_id: str, request: Request, db=Depends(get_db)):
+    """
+    Fetch setup with linked theses, linked canvases, and images.
+    Returns JSON unless Accept: text/html.
+    """
     rows = await db.execute_fetchall(
         "SELECT * FROM setup WHERE id = ?", (setup_id,)
     )
@@ -50,13 +89,12 @@ async def get_setup(setup_id: str, request: Request, db=Depends(get_db)):
         (setup_id,),
     )
 
-    linked_observations = await db.execute_fetchall(
-        """SELECT sol.observation_id, o.instrument AS obs_instrument,
-                  o.type AS obs_type, o.observation, sol.created_at
-           FROM setup_observation_links sol
-           JOIN observation o ON o.id = sol.observation_id
-           WHERE sol.setup_id = ?
-           ORDER BY sol.created_at ASC""",
+    linked_canvases = await db.execute_fetchall(
+        """SELECT slc.canvas_id, c.name, c.status, slc.created_at
+           FROM setup_linked_canvases slc
+           JOIN canvas c ON c.id = slc.canvas_id
+           WHERE slc.setup_id = ?
+           ORDER BY slc.created_at ASC""",
         (setup_id,),
     )
 
@@ -65,82 +103,42 @@ async def get_setup(setup_id: str, request: Request, db=Depends(get_db)):
         (setup_id,),
     )
 
-    accept = request.headers.get("accept", "")
-    wants_html = "text/html" in accept and not request.headers.get("hx-request")
+    wants_html = (
+        "text/html" in request.headers.get("accept", "")
+        and not request.headers.get("hx-request")
+    )
+
+    data = {
+        **setup,
+        "linked_theses": [dict(r) for r in linked_theses],
+        "linked_canvases": [dict(r) for r in linked_canvases],
+        "images": [dict(r) for r in images],
+    }
 
     if not wants_html:
-        return {
-            **setup,
-            "linked_theses": [dict(r) for r in linked_theses],
-            "linked_observations": [dict(r) for r in linked_observations],
-            "images": [dict(r) for r in images],
-        }
+        return data
 
     return templates.TemplateResponse("setup/detail.html", {
         "request": request,
         "setup": setup,
         "linked_theses": [dict(r) for r in linked_theses],
-        "linked_observations": [dict(r) for r in linked_observations],
+        "linked_canvases": [dict(r) for r in linked_canvases],
         "images": [dict(r) for r in images],
     })
-
-
-# ─── SETUP STATE TRANSITIONS ─────────────────────────────────────────────────
-
-
-@router.patch("/{setup_id}/status")
-async def transition_setup_status(
-    setup_id: str, payload: SetupStatusTransition, db=Depends(get_db)
-):
-    rows = await db.execute_fetchall(
-        "SELECT id, status FROM setup WHERE id = ?", (setup_id,)
-    )
-    if not rows:
-        raise HTTPException(404, "Setup not found")
-
-    await db.execute("BEGIN")
-    try:
-        if payload.status == "passed":
-            await db.execute(
-                """UPDATE setup SET status = ?, passed_reason = ?, passed_reason_type = ?
-                   WHERE id = ?""",
-                (payload.status, payload.passed_reason, payload.passed_reason_type, setup_id),
-            )
-        else:
-            await db.execute(
-                "UPDATE setup SET status = ? WHERE id = ?",
-                (payload.status, setup_id),
-            )
-        await db.commit()
-    except IntegrityError as e:
-        await db.rollback()
-        raise HTTPException(400, detail=str(e))
-    except Exception:
-        await db.rollback()
-        raise
-
-    updated = await db.execute_fetchall(
-        "SELECT status FROM setup WHERE id = ?", (setup_id,)
-    )
-    return {"setup_id": setup_id, "status": dict(updated[0])["status"]}
-
-
-# ─── SETUP ↔ THESIS LINKS ────────────────────────────────────────────────────
 
 
 @router.post("/{setup_id}/link-thesis/{thesis_id}")
 async def link_thesis_to_setup(
     setup_id: str, thesis_id: str, db=Depends(get_db)
 ):
-    setup_rows = await db.execute_fetchall(
+    """Link a setup to a thesis via setup_thesis_links (many-to-many)."""
+    if not await db.execute_fetchall(
         "SELECT id FROM setup WHERE id = ?", (setup_id,)
-    )
-    if not setup_rows:
+    ):
         raise HTTPException(404, "Setup not found")
-    thesis_rows = await db.execute_fetchall(
+    if not await db.execute_fetchall(
         "SELECT id FROM thesis WHERE id = ?", (thesis_id,)
-    )
-    if not thesis_rows:
+    ):
         raise HTTPException(404, "Thesis not found")
 
     await db.execute("BEGIN")
@@ -159,35 +157,31 @@ async def link_thesis_to_setup(
     return {"setup_id": setup_id, "thesis_id": thesis_id}
 
 
-# ─── SETUP ↔ OBSERVATION LINKS ───────────────────────────────────────────────
-
-
-@router.post("/{setup_id}/link-observation/{observation_id}")
-async def link_observation_to_setup(
-    setup_id: str, observation_id: str, db=Depends(get_db)
+@router.post("/{setup_id}/link-canvas/{canvas_id}")
+async def link_canvas_to_setup(
+    setup_id: str, canvas_id: str, db=Depends(get_db)
 ):
-    setup_rows = await db.execute_fetchall(
+    """Link a setup to a canvas via setup_linked_canvases."""
+    if not await db.execute_fetchall(
         "SELECT id FROM setup WHERE id = ?", (setup_id,)
-    )
-    if not setup_rows:
+    ):
         raise HTTPException(404, "Setup not found")
-    obs_rows = await db.execute_fetchall(
-        "SELECT id FROM observation WHERE id = ?", (observation_id,)
-    )
-    if not obs_rows:
-        raise HTTPException(404, "Observation not found")
+    if not await db.execute_fetchall(
+        "SELECT id FROM canvas WHERE id = ?", (canvas_id,)
+    ):
+        raise HTTPException(404, "Canvas not found")
 
     await db.execute("BEGIN")
     try:
         await db.execute(
-            "INSERT INTO setup_observation_links (setup_id, observation_id) VALUES (?, ?)",
-            (setup_id, observation_id),
+            "INSERT INTO setup_linked_canvases (setup_id, canvas_id) VALUES (?, ?)",
+            (setup_id, canvas_id),
         )
         await db.commit()
     except IntegrityError:
         await db.rollback()
-        raise HTTPException(409, "Observation already linked to this setup")
+        raise HTTPException(409, "Canvas already linked to this setup")
     except Exception:
         await db.rollback()
         raise
-    return {"setup_id": setup_id, "observation_id": observation_id}
+    return {"setup_id": setup_id, "canvas_id": canvas_id}

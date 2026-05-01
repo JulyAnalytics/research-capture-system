@@ -3,120 +3,137 @@
 {% from "components/chip.html" import chip %}
 {% from "components/inline_form.html" import inline_form %}
 
-{% block title %}Setup / {{ setup.instrument }}{% endblock %}
+{% block title %}Setup / {{ setup.name }}{% endblock %}
 
 {% block content %}
-<div x-data="{
-    showPassForm: false,
-    passReason: '',
-    passType: ''
-}">
+<div x-data="{}">
 
-    <!-- Back button (change spec Task 013 delta) -->
     <button onclick="history.back()" class="btn-ghost btn-compact" style="margin-bottom: var(--space-2); color: var(--color-text-secondary)">← Back</button>
 
     <!-- Breadcrumb -->
     <div style="font-family: var(--font-ui); font-size: var(--text-sm); color: var(--color-text-secondary); margin-bottom: var(--space-4)">
         <span>Setup</span> <span style="margin: 0 6px">/</span>
-        <span style="color: var(--color-text-primary); font-weight: 500">{{ setup.instrument }}</span>
+        <span style="color: var(--color-text-primary); font-weight: 500">{{ setup.name }}</span>
     </div>
 
     <!-- Entity identity bar -->
-    <div style="display: flex; align-items: center; gap: var(--space-4); margin-bottom: var(--space-6); padding-left: 12px; border-left: 3px solid var(--color-operational)">
-        <h1 style="font-family: var(--font-ui); font-size: var(--text-xl); font-weight: 500; margin: 0">{{ setup.instrument }}</h1>
-        {{ badge(status=setup.status) }}
-        <span style="font-family: var(--font-data); font-size: var(--text-sm); color: var(--color-text-secondary)">{{ setup.date }}</span>
-        <span style="font-family: var(--font-ui); font-size: var(--text-sm); color: var(--color-text-secondary)">{{ setup.setup_type }}</span>
+    <div style="display: flex; align-items: center; gap: var(--space-4); margin-bottom: var(--space-6); padding-left: 12px; border-left: 3px solid var(--color-analytical)">
+        <h1 style="font-family: var(--font-ui); font-size: var(--text-xl); font-weight: 500; margin: 0">{{ setup.name }}</h1>
+        {{ badge(status=setup.type) }}
+        <span style="font-family: var(--font-data); font-size: var(--text-sm); color: var(--color-text-secondary)">{{ setup.instrument }}</span>
+        <span style="font-family: var(--font-data); font-size: var(--text-sm); color: var(--color-text-tertiary)">{{ setup.date }}</span>
+    </div>
 
-        <div style="margin-left: auto; display: flex; gap: var(--space-2)">
-            {% if setup.status == 'watching' %}
-            <button class="btn btn-secondary btn-compact"
-                    hx-patch="{{ '/setup/%s/status' % setup.id }}"
-                    hx-headers='{"Content-Type": "application/json"}'
-                    hx-vals='{"status": "taken"}'
-                    hx-swap="none"
-                    hx-on::after-request="location.reload()">Take setup</button>
-            <button class="btn btn-ghost btn-compact" style="color: var(--color-text-secondary)"
-                    @click="showPassForm = true">Pass setup</button>
-            {% endif %}
+    <!-- Type + Timeframe data fields -->
+    <div style="display: flex; gap: var(--space-6); margin-bottom: var(--space-4)">
+        <div>
+            <div style="font-family: var(--font-ui); font-size: var(--text-xs); color: var(--color-text-tertiary); text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: 4px">Type</div>
+            <div style="font-family: var(--font-ui); font-size: var(--text-sm); color: var(--color-text-primary)">{{ setup.type }}</div>
+        </div>
+        <div>
+            <div style="font-family: var(--font-ui); font-size: var(--text-xs); color: var(--color-text-tertiary); text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: 4px">Timeframe</div>
+            <div style="font-family: var(--font-data); font-size: var(--text-sm); color: var(--color-text-primary)">{{ setup.timeframe }}</div>
         </div>
     </div>
 
-    <!-- ── Note section ──────────────────────────────────────────────── -->
-    <div class="section-header">Note</div>
-    <div style="font-family: var(--font-prose); font-size: var(--text-prose); color: var(--color-text-primary); padding: var(--space-3) 0">
-        {{ setup.note }}
+    <!-- Setup note (read-only prose, locked) -->
+    <div class="section-header">Setup note</div>
+    <div style="font-family: var(--font-prose); font-size: var(--text-prose); line-height: var(--text-prose-lh); color: var(--color-text-primary); padding: var(--space-3) 0; margin-bottom: var(--space-4)">
+        {{ setup.setup_note }}
     </div>
 
-    <!-- ── Passed classification form (6.12) ─────────────────────────── -->
-    <template x-if="showPassForm">
-        <div style="margin-top: var(--space-4)">
-            {% call inline_form(id="pass-setup-form") %}
-            <div style="margin-bottom: var(--space-3)">
-                <label style="font-family: var(--font-ui); font-size: var(--text-sm); color: var(--color-text-secondary); display: block; margin-bottom: var(--space-1)">Why are you passing this setup?</label>
-                <textarea class="form-textarea" x-model="passReason" rows="3" placeholder="Required" style="min-height: 60px"></textarea>
-            </div>
-            <div style="display: flex; gap: var(--space-3); margin-bottom: var(--space-3)">
-                <button style="flex: 1; height: 48px; border: 1px solid var(--color-border); border-radius: 6px; background: transparent; cursor: pointer; padding: 0 var(--space-3); display: flex; flex-direction: column; justify-content: center"
-                        :style="passType === 'analytical' ? 'background: var(--color-recessed); border-color: var(--color-text-primary); font-weight: 500' : ''"
-                        @click="passType = 'analytical'">
-                    <span style="font-family: var(--font-ui); font-size: 14px; color: var(--color-text-primary)">Analytical</span>
-                    <span style="font-family: var(--font-ui); font-size: 11px; color: var(--color-text-tertiary)">The setup no longer meets your criteria.</span>
-                </button>
-                <button style="flex: 1; height: 48px; border: 1px solid var(--color-border); border-radius: 6px; background: transparent; cursor: pointer; padding: 0 var(--space-3); display: flex; flex-direction: column; justify-content: center"
-                        :style="passType === 'psychological' ? 'background: var(--color-recessed); border-color: var(--color-text-primary); font-weight: 500' : ''"
-                        @click="passType = 'psychological'">
-                    <span style="font-family: var(--font-ui); font-size: 14px; color: var(--color-text-primary)">Psychological</span>
-                    <span style="font-family: var(--font-ui); font-size: 11px; color: var(--color-text-tertiary)">You are avoiding this for non-analytical reasons.</span>
-                </button>
-            </div>
-            <div style="display: flex; gap: var(--space-2)">
-                <button class="btn btn-primary btn-compact"
-                        :disabled="!passReason.trim() || !passType"
-                        @click="
-                            fetch('{{ '/setup/%s/status' % setup.id }}', {
-                                method: 'PATCH',
-                                headers: {'Content-Type': 'application/json'},
-                                body: JSON.stringify({status: 'passed', passed_reason: passReason, passed_reason_type: passType})
-                            }).then(r => { if (r.ok) location.reload(); });
-                        ">Pass setup</button>
-                <button class="btn-ghost btn-compact" @click="showPassForm = false">Cancel</button>
-            </div>
-            {% endcall %}
-        </div>
-    </template>
-
-    <!-- Show passed info if already passed -->
-    {% if setup.status == 'passed' and setup.passed_reason %}
-    <div style="background: var(--color-recessed); border-radius: 4px; padding: var(--space-3); margin-bottom: var(--space-4)">
-        <div style="font-family: var(--font-ui); font-size: var(--text-xs); color: var(--color-text-tertiary); text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: var(--space-1)">Passed — {{ setup.passed_reason_type }}</div>
-        <div style="font-family: var(--font-prose); font-size: 13px; color: var(--color-text-secondary)">{{ setup.passed_reason }}</div>
-    </div>
-    {% endif %}
-
-    <!-- ── Linked theses ─────────────────────────────────────────────── -->
+    <!-- Linked theses -->
     <div class="section-header">Linked theses</div>
     {% if linked_theses %}
-    <div style="display: flex; gap: var(--space-2); flex-wrap: wrap; margin-bottom: var(--space-4)">
+    <div style="display: flex; gap: var(--space-2); flex-wrap: wrap; margin-bottom: var(--space-2)">
         {% for t in linked_theses %}
         {{ chip(label=t.instrument, layer="analytical", href="/thesis/" ~ t.thesis_id, badge_status=t.status) }}
         {% endfor %}
     </div>
     {% else %}
-    <div style="font-family: var(--font-ui); font-size: var(--text-sm); color: var(--color-text-tertiary); margin-bottom: var(--space-4)">No linked theses.</div>
+    <div style="font-family: var(--font-ui); font-size: var(--text-sm); color: var(--color-text-tertiary); margin-bottom: var(--space-2)">No linked theses.</div>
     {% endif %}
 
-    <!-- ── Linked observations ───────────────────────────────────────── -->
-    <div class="section-header">Linked observations</div>
-    {% if linked_observations %}
-    <div style="display: flex; gap: var(--space-2); flex-wrap: wrap; margin-bottom: var(--space-4)">
-        {% for o in linked_observations %}
-        {{ chip(label=o.obs_instrument ~ " (" ~ o.obs_type ~ ")", layer="analytical", href="/observation/" ~ o.observation_id) }}
+    <!-- Add thesis link -->
+    <div style="margin-bottom: var(--space-6)" x-data="{ showAddThesis: false }">
+        <div x-show="!showAddThesis" style="color: var(--color-text-tertiary); cursor: pointer; padding: var(--space-1) 0; font-size: var(--text-sm)" @click="showAddThesis = true">+ Link thesis</div>
+        <div x-show="showAddThesis" x-transition>
+            {% call inline_form(id="add-thesis-setup-form") %}
+            <div style="display: flex; gap: var(--space-3); align-items: flex-end; flex-wrap: wrap">
+                <div style="flex: 1; min-width: 200px">
+                    <label style="font-family: var(--font-ui); font-size: var(--text-xs); color: var(--color-text-secondary); display: block; margin-bottom: 4px">Thesis</label>
+                    <input type="text" class="form-input" id="add-setup-thesis-typeahead" placeholder="Search theses..."
+                           hx-get="/thesis/search" hx-trigger="input changed delay:300ms" hx-target="#add-setup-thesis-results" hx-vals='js:{q: this.value}'>
+                    <div id="add-setup-thesis-results" style="margin-top: 4px"></div>
+                </div>
+                <div style="display: flex; gap: var(--space-2)">
+                    <button class="btn btn-primary btn-compact" @click="
+                        const tid = document.getElementById('add-setup-thesis-typeahead').dataset.selectedId;
+                        if (!tid) return;
+                        fetch('{{ '/setup/%s/link-thesis/' % setup.id }}' + tid, {method: 'POST'})
+                            .then(r => { if (r.ok) location.reload(); });
+                    ">Link</button>
+                    <button class="btn-ghost btn-compact" @click="showAddThesis = false">Cancel</button>
+                </div>
+            </div>
+            {% endcall %}
+        </div>
+    </div>
+
+    <!-- Linked canvases -->
+    <div class="section-header">Linked canvases</div>
+    {% if linked_canvases %}
+    <div style="display: flex; gap: var(--space-2); flex-wrap: wrap; margin-bottom: var(--space-2)">
+        {% for c in linked_canvases %}
+        {{ chip(label=c.name, layer="analytical", href="/canvas/" ~ c.canvas_id, badge_status=c.status) }}
         {% endfor %}
     </div>
     {% else %}
-    <div style="font-family: var(--font-ui); font-size: var(--text-sm); color: var(--color-text-tertiary); margin-bottom: var(--space-4)">No linked observations.</div>
+    <div style="font-family: var(--font-ui); font-size: var(--text-sm); color: var(--color-text-tertiary); margin-bottom: var(--space-2)">No linked canvases.</div>
     {% endif %}
+
+    <!-- Add canvas link -->
+    <div style="margin-bottom: var(--space-6)" x-data="{ showAddCanvas: false }">
+        <div x-show="!showAddCanvas" style="color: var(--color-text-tertiary); cursor: pointer; padding: var(--space-1) 0; font-size: var(--text-sm)" @click="showAddCanvas = true">+ Link canvas</div>
+        <div x-show="showAddCanvas" x-transition>
+            {% call inline_form(id="add-canvas-setup-form") %}
+            <div style="display: flex; gap: var(--space-3); align-items: flex-end; flex-wrap: wrap">
+                <div style="flex: 1; min-width: 200px">
+                    <label style="font-family: var(--font-ui); font-size: var(--text-xs); color: var(--color-text-secondary); display: block; margin-bottom: 4px">Canvas</label>
+                    <input type="text" class="form-input" id="add-setup-canvas-typeahead" placeholder="Search canvases..."
+                           hx-get="/canvas/search" hx-trigger="input changed delay:300ms" hx-target="#add-setup-canvas-results" hx-vals='js:{q: this.value}'>
+                    <div id="add-setup-canvas-results" style="margin-top: 4px"></div>
+                </div>
+                <div style="display: flex; gap: var(--space-2)">
+                    <button class="btn btn-primary btn-compact" @click="
+                        const cid = document.getElementById('add-setup-canvas-typeahead').dataset.selectedId;
+                        if (!cid) return;
+                        fetch('{{ '/setup/%s/link-canvas/' % setup.id }}' + cid, {method: 'POST'})
+                            .then(r => { if (r.ok) location.reload(); });
+                    ">Link</button>
+                    <button class="btn-ghost btn-compact" @click="showAddCanvas = false">Cancel</button>
+                </div>
+            </div>
+            {% endcall %}
+        </div>
+    </div>
+
+    <!-- Images -->
+    {% if images %}
+    <div class="section-header">Images</div>
+    <div style="display: flex; gap: var(--space-3); flex-wrap: wrap; margin-bottom: var(--space-6)">
+        {% for img in images %}
+        <img src="/images/setups/{{ setup.id }}/{{ img.filename }}"
+             alt="{{ img.filename }}"
+             style="max-width: 280px; max-height: 200px; border-radius: 4px; border: 1px solid var(--color-border)">
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <!-- Append-only notice -->
+    <div style="font-family: var(--font-ui); font-size: 12px; color: var(--color-text-tertiary); font-style: italic; padding-top: var(--space-4); border-top: 1px solid var(--color-border-light)">
+        This setup is filed and cannot be edited.
+    </div>
 
 </div>
 {% endblock %}

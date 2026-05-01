@@ -91,14 +91,28 @@ def _canvas(conn, **kw):
     return cid
 
 
+def _observation(conn, **kw):
+    """Creates a watching-state observation row (lightweight state-machine entity)."""
+    oid = kw.get("id", _uid())
+    _exec(
+        conn,
+        "INSERT INTO observation (id, name, instrument, note, date) VALUES (?,?,?,?,?)",
+        (oid, kw.get("name", "obs label"), kw.get("instrument", "SPY"),
+         kw.get("note", "n"), kw.get("date", "2026-01-15")),
+    )
+    return oid
+
+
 def _setup(conn, **kw):
+    """Creates an append-only setup row (structured analytical entity)."""
     sid = kw.get("id", _uid())
     _exec(
         conn,
-        "INSERT INTO setup (id, instrument, setup_type, status, note, date) "
-        "VALUES (?,?,?,'watching',?,?)",
-        (sid, kw.get("instrument", "SPY"), kw.get("setup_type", "breakout"),
-         kw.get("note", "n"), kw.get("date", "2026-01-15")),
+        "INSERT INTO setup (id, name, instrument, type, timeframe, setup_note, date) "
+        "VALUES (?,?,?,?,?,?,?)",
+        (sid, kw.get("name", "setup label"), kw.get("instrument", "SPY"),
+         kw.get("type", "technical"), kw.get("timeframe", "daily"),
+         kw.get("setup_note", "n"), kw.get("date", "2026-01-15")),
     )
     return sid
 
@@ -132,24 +146,32 @@ def _trade(conn, thesis_id, **kw):
     trid = kw.get("id", _uid())
     _exec(
         conn,
-        "INSERT INTO trade (id, thesis_id, instrument_type, entry_rules_stated, exit_rules_stated, "
-        "thesis_snapshot, status) VALUES (?,?,'equity',?,?,?,'open')",
-        (trid, thesis_id, kw.get("entry_rules", "er"), kw.get("exit_rules", "xr"),
+        "INSERT INTO trade (id, name, thesis_id, instrument_type, "
+        "entry_rules_stated, exit_rules_stated, thesis_snapshot, status) "
+        "VALUES (?,?,?,'equity',?,?,?,'active')",
+        (trid, kw.get("name", "Test trade"), thesis_id,
+         kw.get("entry_rules", "er"),
+         kw.get("exit_rules", "xr"),
          kw.get("snapshot", "snap")),
     )
     return trid
 
 
-def _observation(conn, **kw):
-    oid = kw.get("id", _uid())
+def _idea(conn, **kw):
+    """
+    Create a minimal idea trade (status='idea', no thesis_id).
+    Used for testing idea→active transition via UPDATE — the only path
+    that exercises trade_active_gate. Do not use _trade() for this
+    purpose: _trade() inserts directly as 'active' and bypasses the gate.
+    """
+    tid = kw.get("id", _uid())
     _exec(
         conn,
-        "INSERT INTO observation (id, date, instrument, timeframe, type, observation) "
-        "VALUES (?,?,?,?,?,?)",
-        (oid, kw.get("date", "2026-01-15"), kw.get("instrument", "SPY"),
-         kw.get("timeframe", "4H"), kw.get("type", "technical"), kw.get("observation", "obs")),
+        "INSERT INTO trade (id, name, instrument_type, status) "
+        "VALUES (?,?,'equity','idea')",
+        (tid, kw.get("name", "Test idea")),
     )
-    return oid
+    return tid
 
 
 # =============================================================================
@@ -167,28 +189,37 @@ def test_preflight(conn):
     tables = set(r[0] for r in _all(conn, "SELECT name FROM sqlite_master WHERE type='table'"))
     required_tables = {
         "canvas", "canvas_cross_currents", "canvas_invalidation_conditions",
-        "canvas_version_history", "setup", "setup_images", "thesis",
+        "canvas_version_history", "setup", "setup_images", "setup_thesis_links",
+        "setup_linked_canvases", "thesis",
         "thesis_kill_conditions_macro", "thesis_kill_conditions_technical",
         "thesis_decision_points", "thesis_linked_canvases", "thesis_version_history",
         "trade", "trade_entries", "trade_exits", "trade_options_meta",
-        "trade_option_legs", "observation", "observation_linked_canvases",
-        "observation_images", "setup_thesis_links", "setup_observation_links",
+        "trade_option_legs", "observation", "observation_thesis_links",
+        "observation_setup_links",
         "action", "review", "inbox", "entity_events", "canvas_source_documents",
         "export_watermarks", "failed_exports", "schema_version",
     }
     missing = required_tables - tables
     assert not missing, f"Missing tables: {missing}"
 
+    absent_tables = {"setup_observation_links", "observation_linked_canvases", "observation_images"}
+    present = absent_tables & tables
+    assert not present, f"Tables that must not exist are present: {present}"
+
     views = set(r[0] for r in _all(conn, "SELECT name FROM sqlite_master WHERE type='view'"))
     required_views = {
         "stale_canvases", "stale_theses", "stale_invalidation_conditions",
-        "overdue_actions", "active_surveillance", "canvas_observation_backlinks",
-        "passed_setup_analysis", "passed_setup_detail", "review_mistake_distribution",
-        "decision_point_deviations", "options_iv_comparison",
-        "invalidation_post_mortem", "thesis_lifespan", "review_lag",
+        "overdue_actions", "active_surveillance", "canvas_setup_backlinks",
+        "passed_observation_analysis", "passed_observation_detail",
+        "review_mistake_distribution", "decision_point_deviations",
+        "options_iv_comparison", "invalidation_post_mortem", "thesis_lifespan", "review_lag",
     }
     missing_v = required_views - views
     assert not missing_v, f"Missing views: {missing_v}"
+
+    absent_views = {"canvas_observation_backlinks", "passed_setup_analysis", "passed_setup_detail"}
+    present_v = absent_views & views
+    assert not present_v, f"Views that must not exist are present: {present_v}"
 
     _ok("preflight")
 
@@ -342,78 +373,78 @@ def test_thesis_active_gate_no_trade_id(conn):
     _ok("thesis_active_gate_no_trade_id")
 
 
-# -- 4. Setup State Machine ---------------------------------------------------
+# -- 4. Observation State Machine ---------------------------------------------
 
-def test_setup_state_watching_to_taken(conn):
-    sid = _setup(conn)
+def test_observation_state_watching_to_taken(conn):
+    oid = _observation(conn)
     tid = _thesis(conn)
-    _exec(conn, "INSERT INTO setup_thesis_links (setup_id, thesis_id) VALUES (?,?)", (sid, tid))
-    _exec(conn, "UPDATE setup SET status = 'taken' WHERE id = ?", (sid,))
-    assert _val(conn, "SELECT status FROM setup WHERE id = ?", (sid,)) == "taken"
-    _ok("setup_state_watching_to_taken")
+    _exec(conn, "INSERT INTO observation_thesis_links (observation_id, thesis_id) VALUES (?,?)", (oid, tid))
+    _exec(conn, "UPDATE observation SET status = 'taken' WHERE id = ?", (oid,))
+    assert _val(conn, "SELECT status FROM observation WHERE id = ?", (oid,)) == "taken"
+    _ok("observation_state_watching_to_taken")
 
 
-def test_setup_state_watching_to_passed(conn):
-    sid = _setup(conn)
-    _exec(conn, "UPDATE setup SET status = 'passed', passed_reason = 'no conv', "
-                "passed_reason_type = 'analytical' WHERE id = ?", (sid,))
-    assert _val(conn, "SELECT status FROM setup WHERE id = ?", (sid,)) == "passed"
-    _ok("setup_state_watching_to_passed")
+def test_observation_state_watching_to_passed(conn):
+    oid = _observation(conn)
+    _exec(conn, "UPDATE observation SET status = 'passed', passed_reason = 'no conv', "
+                "passed_reason_type = 'analytical' WHERE id = ?", (oid,))
+    assert _val(conn, "SELECT status FROM observation WHERE id = ?", (oid,)) == "passed"
+    _ok("observation_state_watching_to_passed")
 
 
-def test_setup_state_taken_is_terminal(conn):
-    sid = _setup(conn)
+def test_observation_state_taken_is_terminal(conn):
+    oid = _observation(conn)
     tid = _thesis(conn)
-    _exec(conn, "INSERT INTO setup_thesis_links (setup_id, thesis_id) VALUES (?,?)", (sid, tid))
-    _exec(conn, "UPDATE setup SET status = 'taken' WHERE id = ?", (sid,))
+    _exec(conn, "INSERT INTO observation_thesis_links (observation_id, thesis_id) VALUES (?,?)", (oid, tid))
+    _exec(conn, "UPDATE observation SET status = 'taken' WHERE id = ?", (oid,))
     try:
-        _exec(conn, "UPDATE setup SET status = 'watching' WHERE id = ?", (sid,))
+        _exec(conn, "UPDATE observation SET status = 'watching' WHERE id = ?", (oid,))
         raise Abort("should have raised")
     except sqlite3.IntegrityError:
         pass
-    _ok("setup_state_taken_is_terminal")
+    _ok("observation_state_taken_is_terminal")
 
 
-def test_setup_state_passed_is_terminal(conn):
-    sid = _setup(conn)
-    _exec(conn, "UPDATE setup SET status = 'passed', passed_reason = 'r', "
-                "passed_reason_type = 'psychological' WHERE id = ?", (sid,))
+def test_observation_state_passed_is_terminal(conn):
+    oid = _observation(conn)
+    _exec(conn, "UPDATE observation SET status = 'passed', passed_reason = 'r', "
+                "passed_reason_type = 'psychological' WHERE id = ?", (oid,))
     try:
-        _exec(conn, "UPDATE setup SET status = 'watching' WHERE id = ?", (sid,))
+        _exec(conn, "UPDATE observation SET status = 'watching' WHERE id = ?", (oid,))
         raise Abort("should have raised")
     except sqlite3.IntegrityError:
         pass
-    _ok("setup_state_passed_is_terminal")
+    _ok("observation_state_passed_is_terminal")
 
 
-def test_setup_taken_gate_no_thesis_link(conn):
-    sid = _setup(conn)
+def test_observation_taken_gate_no_thesis_link(conn):
+    oid = _observation(conn)
     try:
-        _exec(conn, "UPDATE setup SET status = 'taken' WHERE id = ?", (sid,))
+        _exec(conn, "UPDATE observation SET status = 'taken' WHERE id = ?", (oid,))
         raise Abort("should have raised")
     except sqlite3.IntegrityError:
         pass
-    _ok("setup_taken_gate_no_thesis_link")
+    _ok("observation_taken_gate_no_thesis_link")
 
 
-def test_setup_passed_gate_no_reason(conn):
-    sid = _setup(conn)
+def test_observation_passed_gate_no_reason(conn):
+    oid = _observation(conn)
     try:
-        _exec(conn, "UPDATE setup SET status = 'passed', passed_reason_type = 'analytical' WHERE id = ?", (sid,))
+        _exec(conn, "UPDATE observation SET status = 'passed', passed_reason_type = 'analytical' WHERE id = ?", (oid,))
         raise Abort("should have raised")
     except sqlite3.IntegrityError:
         pass
-    _ok("setup_passed_gate_no_reason")
+    _ok("observation_passed_gate_no_reason")
 
 
-def test_setup_passed_gate_no_reason_type(conn):
-    sid = _setup(conn)
+def test_observation_passed_gate_no_reason_type(conn):
+    oid = _observation(conn)
     try:
-        _exec(conn, "UPDATE setup SET status = 'passed', passed_reason = 'reason' WHERE id = ?", (sid,))
+        _exec(conn, "UPDATE observation SET status = 'passed', passed_reason = 'reason' WHERE id = ?", (oid,))
         raise Abort("should have raised")
     except sqlite3.IntegrityError:
         pass
-    _ok("setup_passed_gate_no_reason_type")
+    _ok("observation_passed_gate_no_reason_type")
 
 
 # -- 5. Frozen Fields ---------------------------------------------------------
@@ -534,19 +565,20 @@ def test_trade_exits_append_only(conn):
     _ok("trade_exits_append_only")
 
 
-def test_observation_append_only(conn):
-    oid = _observation(conn)
+def test_setup_append_only(conn):
+    """setup is now append-only — UPDATE and DELETE are rejected."""
+    sid = _setup(conn)
     try:
-        _exec(conn, "UPDATE observation SET observation = 'modified' WHERE id = ?", (oid,))
+        _exec(conn, "UPDATE setup SET setup_note = 'modified' WHERE id = ?", (sid,))
         raise Abort("should have raised")
     except sqlite3.IntegrityError:
         pass
     try:
-        _exec(conn, "DELETE FROM observation WHERE id = ?", (oid,))
+        _exec(conn, "DELETE FROM setup WHERE id = ?", (sid,))
         raise Abort("should have raised")
     except sqlite3.IntegrityError:
         pass
-    _ok("observation_append_only")
+    _ok("setup_append_only")
 
 
 def test_canvas_version_history_append_only(conn):
@@ -782,7 +814,7 @@ def test_event_trade_created(conn):
     row = _row(conn, "SELECT entity_type, event_type, new_status FROM entity_events "
                       "WHERE entity_id = ?", (trid,))
     assert row is not None, "no event logged for trade created"
-    assert row[0] == "trade" and row[1] == "created" and row[2] == "open"
+    assert row[0] == "trade" and row[1] == "created" and row[2] == "active"
     _ok("event_trade_created")
 
 
@@ -795,36 +827,36 @@ def test_event_trade_closed(conn):
     row = _row(conn, "SELECT entity_type, event_type, old_status, new_status FROM entity_events "
                       "WHERE entity_id = ? AND event_type = 'status_changed'", (trid,))
     assert row is not None, "no status_changed event for trade closed"
-    assert row[0] == "trade" and row[2] == "open" and row[3] == "closed"
+    assert row[0] == "trade" and row[2] == "active" and row[3] == "closed"
     _ok("event_trade_closed")
 
 
 def test_event_observation_created(conn):
     oid = _observation(conn)
-    row = _row(conn, "SELECT entity_type, event_type FROM entity_events WHERE entity_id = ?", (oid,))
+    row = _row(conn, "SELECT entity_type, event_type, new_status FROM entity_events WHERE entity_id = ?", (oid,))
     assert row is not None, "no event logged for observation"
-    assert row[0] == "observation" and row[1] == "created"
+    assert row[0] == "observation" and row[1] == "created" and row[2] == "watching"
     _ok("event_observation_created")
+
+
+def test_event_observation_status_changed(conn):
+    oid = _observation(conn)
+    tid = _thesis(conn)
+    _exec(conn, "INSERT INTO observation_thesis_links (observation_id, thesis_id) VALUES (?,?)", (oid, tid))
+    _exec(conn, "UPDATE observation SET status = 'taken' WHERE id = ?", (oid,))
+    row = _row(conn, "SELECT event_type, old_status, new_status FROM entity_events "
+                      "WHERE entity_id = ? AND event_type = 'status_changed'", (oid,))
+    assert row is not None
+    assert row[1] == "watching" and row[2] == "taken"
+    _ok("event_observation_status_changed")
 
 
 def test_event_setup_created(conn):
     sid = _setup(conn)
-    row = _row(conn, "SELECT entity_type, event_type, new_status FROM entity_events WHERE entity_id = ?", (sid,))
+    row = _row(conn, "SELECT entity_type, event_type FROM entity_events WHERE entity_id = ?", (sid,))
     assert row is not None
-    assert row[0] == "setup" and row[1] == "created" and row[2] == "watching"
+    assert row[0] == "setup" and row[1] == "created"
     _ok("event_setup_created")
-
-
-def test_event_setup_status_changed(conn):
-    sid = _setup(conn)
-    tid = _thesis(conn)
-    _exec(conn, "INSERT INTO setup_thesis_links (setup_id, thesis_id) VALUES (?,?)", (sid, tid))
-    _exec(conn, "UPDATE setup SET status = 'taken' WHERE id = ?", (sid,))
-    row = _row(conn, "SELECT event_type, old_status, new_status FROM entity_events "
-                      "WHERE entity_id = ? AND event_type = 'status_changed'", (sid,))
-    assert row is not None
-    assert row[1] == "watching" and row[2] == "taken"
-    _ok("event_setup_status_changed")
 
 
 def test_event_review_phase1_filed(conn):
@@ -920,24 +952,25 @@ def test_stale_invalidation_conditions_view(conn):
 
 
 def test_active_surveillance_view(conn):
-    sid = _setup(conn)
-    tid = _thesis(conn)
+    """active_surveillance now queries observation (watching state) with observation_thesis_links and observation_setup_links."""
     oid = _observation(conn)
-    _exec(conn, "INSERT INTO setup_thesis_links (setup_id, thesis_id) VALUES (?,?)", (sid, tid))
-    _exec(conn, "INSERT INTO setup_observation_links (setup_id, observation_id) VALUES (?,?)", (sid, oid))
-    rows = _all(conn, "SELECT id, thesis_link_count, observation_link_count FROM active_surveillance")
+    tid = _thesis(conn)
+    sid = _setup(conn)
+    _exec(conn, "INSERT INTO observation_thesis_links (observation_id, thesis_id) VALUES (?,?)", (oid, tid))
+    _exec(conn, "INSERT INTO observation_setup_links (observation_id, setup_id) VALUES (?,?)", (oid, sid))
+    rows = _all(conn, "SELECT id, thesis_link_count, setup_link_count FROM active_surveillance")
     assert len(rows) == 1
-    assert rows[0][0] == sid
+    assert rows[0][0] == oid
     assert rows[0][1] == 1  # thesis_link_count
-    assert rows[0][2] == 1  # observation_link_count
+    assert rows[0][2] == 1  # setup_link_count
     _ok("active_surveillance_view")
 
 
 def test_active_surveillance_excludes_taken(conn):
-    sid = _setup(conn)
+    oid = _observation(conn)
     tid = _thesis(conn)
-    _exec(conn, "INSERT INTO setup_thesis_links (setup_id, thesis_id) VALUES (?,?)", (sid, tid))
-    _exec(conn, "UPDATE setup SET status = 'taken' WHERE id = ?", (sid,))
+    _exec(conn, "INSERT INTO observation_thesis_links (observation_id, thesis_id) VALUES (?,?)", (oid, tid))
+    _exec(conn, "UPDATE observation SET status = 'taken' WHERE id = ?", (oid,))
     rows = _all(conn, "SELECT id FROM active_surveillance")
     assert len(rows) == 0
     _ok("active_surveillance_excludes_taken")
@@ -952,18 +985,233 @@ def test_overdue_actions_view(conn):
     _ok("overdue_actions_view")
 
 
-def test_passed_setup_analysis_view(conn):
-    sid1 = _setup(conn)
-    _exec(conn, "UPDATE setup SET status = 'passed', passed_reason = 'r', passed_reason_type = 'analytical' "
-                "WHERE id = ?", (sid1,))
-    sid2 = _setup(conn)
-    _exec(conn, "UPDATE setup SET status = 'passed', passed_reason = 'r', passed_reason_type = 'psychological' "
-                "WHERE id = ?", (sid2,))
-    rows = _all(conn, "SELECT passed_reason_type, count FROM passed_setup_analysis ORDER BY passed_reason_type")
+def test_passed_observation_analysis_view(conn):
+    """passed_observation_analysis view queries observation (not setup)."""
+    oid1 = _observation(conn)
+    _exec(conn, "UPDATE observation SET status = 'passed', passed_reason = 'r', passed_reason_type = 'analytical' "
+                "WHERE id = ?", (oid1,))
+    oid2 = _observation(conn)
+    _exec(conn, "UPDATE observation SET status = 'passed', passed_reason = 'r', passed_reason_type = 'psychological' "
+                "WHERE id = ?", (oid2,))
+    rows = _all(conn, "SELECT passed_reason_type, count FROM passed_observation_analysis ORDER BY passed_reason_type")
     types = {r[0]: r[1] for r in rows}
     assert types.get("analytical") == 1
     assert types.get("psychological") == 1
-    _ok("passed_setup_analysis_view")
+    _ok("passed_observation_analysis_view")
+
+
+# -- 11. New tests added for swap ---------------------------------------------
+
+def test_setup_thesis_links_junction(conn):
+    """setup_thesis_links is a free many-to-many junction with no status gate.
+    Under the new schema setup is the analytical entity: linking to thesis requires
+    no prior status transition (contrast with the old observation_taken_gate which
+    requires observation_thesis_links before status='taken').
+    Also verifies FK integrity on both columns."""
+    sid = _setup(conn)
+    tid1 = _thesis(conn)
+    tid2 = _thesis(conn)
+
+    # Link setup to thesis with no status precondition — must succeed with no trigger fire
+    _exec(conn, "INSERT INTO setup_thesis_links (setup_id, thesis_id) VALUES (?,?)", (sid, tid1))
+    _exec(conn, "INSERT INTO setup_thesis_links (setup_id, thesis_id) VALUES (?,?)", (sid, tid2))
+    count = _val(conn, "SELECT COUNT(*) FROM setup_thesis_links WHERE setup_id = ?", (sid,))
+    assert count == 2, f"Expected 2 links, got {count}"
+
+    # setup remains append-only regardless of thesis links — no status column exists
+    try:
+        _exec(conn, "UPDATE setup SET setup_note = 'modified' WHERE id = ?", (sid,))
+        raise Abort("setup should still be append-only after thesis links inserted")
+    except sqlite3.IntegrityError:
+        pass
+
+    # FK enforcement: nonexistent thesis_id must be rejected
+    try:
+        _exec(conn, "INSERT INTO setup_thesis_links (setup_id, thesis_id) VALUES (?,?)", (sid, "NO-EXIST"))
+        raise Abort("should have raised on bad thesis_id FK")
+    except sqlite3.IntegrityError:
+        pass
+
+    # FK enforcement: nonexistent setup_id must be rejected
+    try:
+        _exec(conn, "INSERT INTO setup_thesis_links (setup_id, thesis_id) VALUES (?,?)", ("NO-EXIST", tid1))
+        raise Abort("should have raised on bad setup_id FK")
+    except sqlite3.IntegrityError:
+        pass
+
+    _ok("setup_thesis_links_junction")
+
+
+def test_observation_append_only_blocked(conn):
+    """observation is NOT append-only — UPDATE succeeds (state machine allows note updates).
+    setup IS append-only — UPDATE raises."""
+    oid = _observation(conn)
+    # observation note update must succeed (no append-only trigger on observation)
+    _exec(conn, "UPDATE observation SET note = 'changed note' WHERE id = ?", (oid,))
+    assert _val(conn, "SELECT note FROM observation WHERE id = ?", (oid,)) == "changed note"
+
+    # setup update must raise
+    sid = _setup(conn)
+    try:
+        _exec(conn, "UPDATE setup SET setup_note = 'changed' WHERE id = ?", (sid,))
+        raise Abort("should have raised for setup update")
+    except sqlite3.IntegrityError:
+        pass
+    _ok("observation_append_only_blocked")
+
+
+# -- 12. Trade idea state machine tests ---------------------------------------
+
+def test_trade_idea_creation(conn):
+    """Idea trade inserts with no thesis_id — succeeds."""
+    tid = _idea(conn)
+    row = _row(conn, "SELECT status, thesis_id FROM trade WHERE id = ?", (tid,))
+    assert row[0] == 'idea'
+    assert row[1] is None
+    _ok("test_trade_idea_creation")
+
+
+def test_trade_idea_to_active_gate_no_thesis(conn):
+    """idea→active blocked when thesis_id is NULL."""
+    tid = _idea(conn)
+    try:
+        _exec(conn, "UPDATE trade SET status='active' WHERE id=?", (tid,))
+        raise Abort("should have raised")
+    except sqlite3.IntegrityError as e:
+        assert "thesis_id required" in str(e), f"Wrong error: {e}"
+    _ok("test_trade_idea_to_active_gate_no_thesis")
+
+
+def test_trade_idea_to_active_gate_no_entry_rules(conn):
+    """idea→active blocked when entry_rules_stated is NULL."""
+    full_tid = _full_thesis(conn)
+    _exec(conn, "UPDATE thesis SET status='ready' WHERE id=?", (full_tid,))
+    tid = _idea(conn)
+    _exec(conn,
+          "UPDATE trade SET thesis_id=?, exit_rules_stated='xr', "
+          "thesis_snapshot='snap' WHERE id=?",
+          (full_tid, tid))
+    try:
+        _exec(conn, "UPDATE trade SET status='active' WHERE id=?", (tid,))
+        raise Abort("should have raised")
+    except sqlite3.IntegrityError as e:
+        assert "entry_rules_stated required" in str(e), f"Wrong error: {e}"
+    _ok("test_trade_idea_to_active_gate_no_entry_rules")
+
+
+def test_trade_idea_to_active_succeeds(conn):
+    """idea→active succeeds when all gate fields are set via UPDATE."""
+    full_tid = _full_thesis(conn)
+    _exec(conn, "UPDATE thesis SET status='ready' WHERE id=?", (full_tid,))
+    tid = _idea(conn)
+    _exec(conn,
+          "UPDATE trade SET thesis_id=?, entry_rules_stated='er', "
+          "exit_rules_stated='xr', thesis_snapshot='snap' WHERE id=?",
+          (full_tid, tid))
+    _exec(conn, "UPDATE trade SET status='active' WHERE id=?", (tid,))
+    row = _row(conn, "SELECT status FROM trade WHERE id=?", (tid,))
+    assert row[0] == 'active'
+    _ok("test_trade_idea_to_active_succeeds")
+
+
+def test_trade_idea_to_closed_blocked(conn):
+    """idea→closed is blocked by trade_state_machine."""
+    tid = _idea(conn)
+    try:
+        _exec(conn, "UPDATE trade SET status='closed' WHERE id=?", (tid,))
+        raise Abort("should have raised")
+    except sqlite3.IntegrityError as e:
+        assert "idea may only transition" in str(e), f"Wrong error: {e}"
+    _ok("test_trade_idea_to_closed_blocked")
+
+
+def test_trade_idea_to_discarded(conn):
+    """idea→discarded succeeds."""
+    tid = _idea(conn)
+    _exec(conn, "UPDATE trade SET status='discarded' WHERE id=?", (tid,))
+    row = _row(conn, "SELECT status FROM trade WHERE id=?", (tid,))
+    assert row[0] == 'discarded'
+    _ok("test_trade_idea_to_discarded")
+
+
+def test_trade_active_to_closed(conn):
+    """active→closed succeeds (renamed from open→closed)."""
+    full_tid = _full_thesis(conn)
+    _exec(conn, "UPDATE thesis SET status='ready' WHERE id=?", (full_tid,))
+    _exec(conn, "UPDATE thesis SET status='active', linked_trade_id='TR-001' WHERE id=?", (full_tid,))
+    trid = _trade(conn, full_tid)
+    _exec(conn, "UPDATE trade SET status='closed', closed_at='2026-04-30T00:00:00Z' WHERE id=?", (trid,))
+    row = _row(conn, "SELECT status FROM trade WHERE id=?", (trid,))
+    assert row[0] == 'closed'
+    _ok("test_trade_active_to_closed")
+
+
+def test_trade_idea_fields_mutable(conn):
+    """entry_rules_stated can be updated on an idea row — frozen only after active."""
+    tid = _idea(conn)
+    _exec(conn, "UPDATE trade SET entry_rules_stated='updated' WHERE id=?", (tid,))
+    row = _row(conn, "SELECT entry_rules_stated FROM trade WHERE id=?", (tid,))
+    assert row[0] == 'updated'
+    _ok("test_trade_idea_fields_mutable")
+
+
+def test_trade_active_frozen_fields(conn):
+    """entry_rules_stated frozen once active — update raises."""
+    full_tid = _full_thesis(conn)
+    _exec(conn, "UPDATE thesis SET status='ready' WHERE id=?", (full_tid,))
+    _exec(conn, "UPDATE thesis SET status='active', linked_trade_id='TR-001' WHERE id=?", (full_tid,))
+    trid = _trade(conn, full_tid)
+    try:
+        _exec(conn, "UPDATE trade SET entry_rules_stated='modified' WHERE id=?", (trid,))
+        raise Abort("should have raised")
+    except sqlite3.IntegrityError as e:
+        assert "frozen" in str(e), f"Wrong error: {e}"
+    _ok("test_trade_active_frozen_fields")
+
+
+def test_thesis_active_gate_trade_not_active(conn):
+    """thesis_active_gate blocks if linked_trade_id references an idea trade."""
+    tid = _full_thesis(conn)
+    _exec(conn, "UPDATE thesis SET status='ready' WHERE id=?", (tid,))
+    idea_id = _idea(conn)
+    try:
+        _exec(conn,
+              "UPDATE thesis SET status='active', linked_trade_id=? WHERE id=?",
+              (idea_id, tid))
+        raise Abort("should have raised")
+    except sqlite3.IntegrityError as e:
+        assert "active gate" in str(e), f"Wrong error: {e}"
+    _ok("test_thesis_active_gate_trade_not_active")
+
+
+def test_event_trade_created_idea(conn):
+    """Event log records new_status='idea' on idea INSERT."""
+    tid = _idea(conn)
+    row = _row(conn,
+               "SELECT entity_type, event_type, new_status FROM entity_events "
+               "WHERE entity_id=?", (tid,))
+    assert row is not None
+    assert row[0] == 'trade' and row[1] == 'created' and row[2] == 'idea'
+    _ok("test_event_trade_created_idea")
+
+
+def test_event_trade_activated(conn):
+    """Event log records idea→active status_changed."""
+    full_tid = _full_thesis(conn)
+    _exec(conn, "UPDATE thesis SET status='ready' WHERE id=?", (full_tid,))
+    tid = _idea(conn)
+    _exec(conn,
+          "UPDATE trade SET thesis_id=?, entry_rules_stated='er', "
+          "exit_rules_stated='xr', thesis_snapshot='snap' WHERE id=?",
+          (full_tid, tid))
+    _exec(conn, "DELETE FROM entity_events")
+    _exec(conn, "UPDATE trade SET status='active' WHERE id=?", (tid,))
+    row = _row(conn,
+               "SELECT event_type, old_status, new_status FROM entity_events "
+               "WHERE entity_id=? AND event_type='status_changed'", (tid,))
+    assert row is not None
+    assert row[1] == 'idea' and row[2] == 'active'
+    _ok("test_event_trade_activated")
 
 
 # -- 11. Summary --------------------------------------------------------------
@@ -993,15 +1241,15 @@ TESTS = [
     test_thesis_ready_gate_no_canvas_link,
     # Thesis active gate
     test_thesis_active_gate_no_trade_id,
-    # 4. Setup state machine
-    test_setup_state_watching_to_taken,
-    test_setup_state_watching_to_passed,
-    test_setup_state_taken_is_terminal,
-    test_setup_state_passed_is_terminal,
-    # Setup gates
-    test_setup_taken_gate_no_thesis_link,
-    test_setup_passed_gate_no_reason,
-    test_setup_passed_gate_no_reason_type,
+    # 4. Observation state machine (was setup state machine)
+    test_observation_state_watching_to_taken,
+    test_observation_state_watching_to_passed,
+    test_observation_state_taken_is_terminal,
+    test_observation_state_passed_is_terminal,
+    # Observation gates
+    test_observation_taken_gate_no_thesis_link,
+    test_observation_passed_gate_no_reason,
+    test_observation_passed_gate_no_reason_type,
     # 5. Frozen fields
     test_trade_frozen_entry_rules,
     test_trade_frozen_exit_rules,
@@ -1011,7 +1259,7 @@ TESTS = [
     # 6. Append-only tables
     test_trade_entries_append_only,
     test_trade_exits_append_only,
-    test_observation_append_only,
+    test_setup_append_only,
     test_canvas_version_history_append_only,
     test_thesis_version_history_append_only,
     test_option_legs_append_only_delete,
@@ -1032,8 +1280,8 @@ TESTS = [
     test_event_trade_created,
     test_event_trade_closed,
     test_event_observation_created,
+    test_event_observation_status_changed,
     test_event_setup_created,
-    test_event_setup_status_changed,
     test_event_review_phase1_filed,
     test_event_review_phase2_filed,
     # 10. Views
@@ -1044,7 +1292,23 @@ TESTS = [
     test_active_surveillance_view,
     test_active_surveillance_excludes_taken,
     test_overdue_actions_view,
-    test_passed_setup_analysis_view,
+    test_passed_observation_analysis_view,
+    # 11. New tests for schema swap
+    test_setup_thesis_links_junction,
+    test_observation_append_only_blocked,
+    # 12. Trade idea state machine
+    test_trade_idea_creation,
+    test_trade_idea_to_active_gate_no_thesis,
+    test_trade_idea_to_active_gate_no_entry_rules,
+    test_trade_idea_to_active_succeeds,
+    test_trade_idea_to_closed_blocked,
+    test_trade_idea_to_discarded,
+    test_trade_active_to_closed,
+    test_trade_idea_fields_mutable,
+    test_trade_active_frozen_fields,
+    test_thesis_active_gate_trade_not_active,
+    test_event_trade_created_idea,
+    test_event_trade_activated,
 ]
 
 

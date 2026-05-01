@@ -42,69 +42,81 @@ WHERE a.status = 'open'
   AND date(a.due_date) <= date('now')
 ORDER BY a.due_date ASC;
 
--- active_surveillance: 1 row per setup.
--- Uses subqueries rather than LEFT JOINs to avoid N×M row explosion when a setup
--- has multiple linked theses or observations.
--- thesis_link_count and observation_link_count expose the full cardinality.
--- The primary linked_thesis_id / linked_observation_id return an arbitrary single
+-- active_surveillance: 1 row per observation in watching state.
+-- Uses subqueries rather than LEFT JOINs to avoid N×M row explosion when an observation
+-- has multiple linked theses or setups.
+-- thesis_link_count and setup_link_count expose the full cardinality.
+-- The primary linked_thesis_id / linked_setup_id return an arbitrary single
 -- linked record for display purposes; full link lists are queried via junction tables.
 DROP VIEW IF EXISTS active_surveillance;
 CREATE VIEW active_surveillance AS
 SELECT
-    s.id,
-    s.instrument,
-    s.setup_type,
-    s.note,
-    s.date,
+    o.id,
+    o.name,
+    o.instrument,
+    o.note,
+    o.date,
     (
-        SELECT stl.thesis_id FROM setup_thesis_links stl
-        WHERE stl.setup_id = s.id LIMIT 1
+        SELECT otl.thesis_id FROM observation_thesis_links otl
+        WHERE otl.observation_id = o.id LIMIT 1
     ) AS linked_thesis_id,
     (
-        SELECT t.status FROM setup_thesis_links stl
-        JOIN thesis t ON t.id = stl.thesis_id
-        WHERE stl.setup_id = s.id LIMIT 1
+        SELECT t.status FROM observation_thesis_links otl
+        JOIN thesis t ON t.id = otl.thesis_id
+        WHERE otl.observation_id = o.id LIMIT 1
     ) AS thesis_status,
     (
-        SELECT sol.observation_id FROM setup_observation_links sol
-        WHERE sol.setup_id = s.id LIMIT 1
-    ) AS linked_observation_id,
-    (SELECT COUNT(*) FROM setup_images       si  WHERE si.setup_id  = s.id) AS image_count,
-    (SELECT COUNT(*) FROM setup_thesis_links stl WHERE stl.setup_id = s.id) AS thesis_link_count,
-    (SELECT COUNT(*) FROM setup_observation_links sol WHERE sol.setup_id = s.id) AS observation_link_count
-FROM setup s
-WHERE s.status = 'watching'
-ORDER BY s.date ASC;
+        SELECT osl.setup_id FROM observation_setup_links osl
+        WHERE osl.observation_id = o.id LIMIT 1
+    ) AS linked_setup_id,
+    (SELECT COUNT(*) FROM observation_thesis_links otl
+     WHERE otl.observation_id = o.id) AS thesis_link_count,
+    (SELECT COUNT(*) FROM observation_setup_links osl
+     WHERE osl.observation_id = o.id) AS setup_link_count
+FROM observation o
+WHERE o.status = 'watching'
+ORDER BY o.date ASC;
 
 -- ─── ANALYTICAL ──────────────────────────────────────────────────────────────
 
 -- Protocol 1 is NOT a view — it fires from the canvas update route.
 
 DROP VIEW IF EXISTS canvas_observation_backlinks;
-CREATE VIEW canvas_observation_backlinks AS
-SELECT olc.canvas_id, o.id AS observation_id, o.date, o.instrument,
-       o.type, o.observation,
-       (SELECT COUNT(*) FROM observation_images oi WHERE oi.observation_id = o.id) AS image_count
-FROM observation_linked_canvases olc
-JOIN observation o ON olc.observation_id = o.id
-ORDER BY o.date DESC;
+DROP VIEW IF EXISTS canvas_setup_backlinks;
+CREATE VIEW canvas_setup_backlinks AS
+SELECT slc.canvas_id,
+       s.id AS setup_id,
+       s.date,
+       s.instrument,
+       s.type,
+       s.setup_note,
+       (SELECT COUNT(*) FROM setup_images si WHERE si.setup_id = s.id) AS image_count
+FROM setup_linked_canvases slc
+JOIN setup s ON slc.setup_id = s.id
+ORDER BY s.date DESC;
 
 -- ─── LEARNING ────────────────────────────────────────────────────────────────
 
 DROP VIEW IF EXISTS passed_setup_analysis;
-CREATE VIEW passed_setup_analysis AS
+DROP VIEW IF EXISTS passed_observation_analysis;
+CREATE VIEW passed_observation_analysis AS
 SELECT
     passed_reason_type,
     COUNT(*) AS count,
-    ROUND(100.0 * COUNT(*) / (SELECT COUNT(*) FROM setup WHERE status = 'passed'), 1) AS pct
-FROM setup
+    ROUND(
+        100.0 * COUNT(*) / NULLIF(
+            (SELECT COUNT(*) FROM observation WHERE status = 'passed'), 0
+        ), 1
+    ) AS pct
+FROM observation
 WHERE status = 'passed'
 GROUP BY passed_reason_type;
 
 DROP VIEW IF EXISTS passed_setup_detail;
-CREATE VIEW passed_setup_detail AS
-SELECT id, instrument, setup_type, passed_reason, passed_reason_type, date
-FROM setup
+DROP VIEW IF EXISTS passed_observation_detail;
+CREATE VIEW passed_observation_detail AS
+SELECT id, name, instrument, passed_reason, passed_reason_type, date
+FROM observation
 WHERE status = 'passed'
 ORDER BY date DESC;
 

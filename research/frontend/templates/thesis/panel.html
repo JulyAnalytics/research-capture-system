@@ -28,7 +28,7 @@
         {% if linked_setups %}
             {% for s in linked_setups %}
             <div style="margin-bottom: 6px">
-                {{ chip(label=s.instrument ~ " (" ~ s.setup_type ~ ")", layer="operational", href="/setup/" ~ s.setup_id, badge_status=s.status) }}
+                {{ chip(label=s.name ~ " — " ~ s.instrument, layer="operational", href="/setup/" ~ s.setup_id) }}
             </div>
             {% endfor %}
         {% else %}

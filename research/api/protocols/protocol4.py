@@ -18,7 +18,8 @@ async def check_protocol4(db, trade_id: str = None):
     """
     if trade_id:
         rows = await db.execute_fetchall(
-            """SELECT t.id AS trade_id, th.instrument AS thesis_instrument,
+            """SELECT t.id AS trade_id,
+                      COALESCE(th.instrument, t.instrument, 'unknown') AS thesis_instrument,
                       t.closed_at
                FROM trade t
                LEFT JOIN thesis th ON th.id = t.thesis_id
@@ -28,7 +29,8 @@ async def check_protocol4(db, trade_id: str = None):
         )
     else:
         rows = await db.execute_fetchall(
-            """SELECT t.id AS trade_id, th.instrument AS thesis_instrument,
+            """SELECT t.id AS trade_id,
+                      COALESCE(th.instrument, t.instrument, 'unknown') AS thesis_instrument,
                       t.closed_at
                FROM trade t
                LEFT JOIN thesis th ON th.id = t.thesis_id

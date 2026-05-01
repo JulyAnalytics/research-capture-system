@@ -46,11 +46,13 @@ END;
 DROP TRIGGER IF EXISTS thesis_active_gate;
 CREATE TRIGGER thesis_active_gate
 BEFORE UPDATE OF status ON thesis
-WHEN NEW.status = 'active' AND OLD.status = 'ready'
+WHEN NEW.status = 'active'
 BEGIN
     SELECT CASE
         WHEN NEW.linked_trade_id IS NULL
             THEN RAISE(ABORT, 'active gate: linked_trade_id required')
+        WHEN (SELECT status FROM trade WHERE id = NEW.linked_trade_id) != 'active'
+            THEN RAISE(ABORT, 'active gate: linked trade must be in active status')
     END;
 END;
 
@@ -95,49 +97,86 @@ BEGIN
 END;
 
 -- ─────────────────────────────────────────
--- SETUP STATE MACHINE
+-- OBSERVATION STATE MACHINE
+-- (observation is now the watching/taken/passed entity)
 -- ─────────────────────────────────────────
 
 DROP TRIGGER IF EXISTS setup_state_machine;
-CREATE TRIGGER setup_state_machine
-BEFORE UPDATE OF status ON setup
+DROP TRIGGER IF EXISTS observation_state_machine;
+CREATE TRIGGER observation_state_machine
+BEFORE UPDATE OF status ON observation
 WHEN OLD.status != NEW.status
 BEGIN
     SELECT CASE
         WHEN OLD.status IN ('taken', 'passed')
-            THEN RAISE(ABORT, 'taken and passed are terminal states')
+            THEN RAISE(ABORT, 'observation: taken and passed are terminal states')
         WHEN OLD.status = 'watching' AND NEW.status NOT IN ('taken', 'passed')
-            THEN RAISE(ABORT, 'invalid transition: watching → taken or passed only')
+            THEN RAISE(ABORT, 'observation: invalid transition from watching — must be taken or passed')
     END;
 END;
 
 DROP TRIGGER IF EXISTS setup_taken_gate;
-CREATE TRIGGER setup_taken_gate
-BEFORE UPDATE OF status ON setup
-WHEN NEW.status = 'taken' AND OLD.status = 'watching'
+DROP TRIGGER IF EXISTS observation_taken_gate;
+CREATE TRIGGER observation_taken_gate
+BEFORE UPDATE OF status ON observation
+WHEN NEW.status = 'taken'
 BEGIN
     SELECT CASE
-        WHEN (SELECT COUNT(*) FROM setup_thesis_links WHERE setup_id = NEW.id) = 0
-            THEN RAISE(ABORT, 'taken gate: setup must be linked to a thesis before taking')
+        WHEN (SELECT COUNT(*) FROM observation_thesis_links
+              WHERE observation_id = NEW.id) = 0
+            THEN RAISE(ABORT, 'observation taken gate: must have at least one linked thesis')
     END;
 END;
 
 DROP TRIGGER IF EXISTS setup_passed_gate;
-CREATE TRIGGER setup_passed_gate
-BEFORE UPDATE OF status ON setup
-WHEN NEW.status = 'passed' AND OLD.status = 'watching'
+DROP TRIGGER IF EXISTS observation_passed_gate;
+CREATE TRIGGER observation_passed_gate
+BEFORE UPDATE OF status ON observation
+WHEN NEW.status = 'passed'
 BEGIN
     SELECT CASE
-        WHEN (NEW.passed_reason IS NULL OR trim(NEW.passed_reason) = '')
-            THEN RAISE(ABORT, 'passed gate: passed_reason required')
+        WHEN NEW.passed_reason IS NULL OR trim(NEW.passed_reason) = ''
+            THEN RAISE(ABORT, 'observation passed gate: passed_reason required')
         WHEN NEW.passed_reason_type IS NULL
-            THEN RAISE(ABORT, 'passed gate: passed_reason_type required (psychological or analytical)')
+            THEN RAISE(ABORT, 'observation passed gate: passed_reason_type required')
     END;
 END;
 
 -- ─────────────────────────────────────────
 -- TRADE
 -- ─────────────────────────────────────────
+
+DROP TRIGGER IF EXISTS trade_state_machine;
+CREATE TRIGGER trade_state_machine
+BEFORE UPDATE OF status ON trade
+WHEN OLD.status != NEW.status
+BEGIN
+    SELECT CASE
+        WHEN OLD.status IN ('closed', 'discarded')
+            THEN RAISE(ABORT, 'trade: closed and discarded are terminal states')
+        WHEN OLD.status = 'idea' AND NEW.status NOT IN ('active', 'discarded')
+            THEN RAISE(ABORT, 'trade: idea may only transition to active or discarded')
+        WHEN OLD.status = 'active' AND NEW.status NOT IN ('closed')
+            THEN RAISE(ABORT, 'trade: active may only transition to closed')
+    END;
+END;
+
+DROP TRIGGER IF EXISTS trade_active_gate;
+CREATE TRIGGER trade_active_gate
+BEFORE UPDATE OF status ON trade
+WHEN NEW.status = 'active'
+BEGIN
+    SELECT CASE
+        WHEN NEW.thesis_id IS NULL
+            THEN RAISE(ABORT, 'trade active gate: thesis_id required')
+        WHEN NEW.entry_rules_stated IS NULL OR trim(NEW.entry_rules_stated) = ''
+            THEN RAISE(ABORT, 'trade active gate: entry_rules_stated required')
+        WHEN NEW.exit_rules_stated IS NULL OR trim(NEW.exit_rules_stated) = ''
+            THEN RAISE(ABORT, 'trade active gate: exit_rules_stated required')
+        WHEN NEW.thesis_snapshot IS NULL OR trim(NEW.thesis_snapshot) = ''
+            THEN RAISE(ABORT, 'trade active gate: thesis_snapshot required')
+    END;
+END;
 
 DROP TRIGGER IF EXISTS trade_review_id_fk;
 CREATE TRIGGER trade_review_id_fk
@@ -213,17 +252,29 @@ END;
 -- ─────────────────────────────────────────
 
 DROP TRIGGER IF EXISTS trade_rules_frozen;
-CREATE TRIGGER trade_rules_frozen
-BEFORE UPDATE OF entry_rules_stated, exit_rules_stated ON trade
+DROP TRIGGER IF EXISTS trade_frozen_entry_rules;
+CREATE TRIGGER trade_frozen_entry_rules
+BEFORE UPDATE OF entry_rules_stated ON trade
+WHEN OLD.status = 'active'
 BEGIN
-    SELECT RAISE(ABORT, 'entry_rules_stated and exit_rules_stated are frozen at open');
+    SELECT RAISE(ABORT, 'trade: entry_rules_stated is frozen once active');
+END;
+
+DROP TRIGGER IF EXISTS trade_frozen_exit_rules;
+CREATE TRIGGER trade_frozen_exit_rules
+BEFORE UPDATE OF exit_rules_stated ON trade
+WHEN OLD.status = 'active'
+BEGIN
+    SELECT RAISE(ABORT, 'trade: exit_rules_stated is frozen once active');
 END;
 
 DROP TRIGGER IF EXISTS trade_snapshot_frozen;
-CREATE TRIGGER trade_snapshot_frozen
+DROP TRIGGER IF EXISTS trade_frozen_thesis_snapshot;
+CREATE TRIGGER trade_frozen_thesis_snapshot
 BEFORE UPDATE OF thesis_snapshot ON trade
+WHEN OLD.status = 'active'
 BEGIN
-    SELECT RAISE(ABORT, 'thesis_snapshot is frozen at open');
+    SELECT RAISE(ABORT, 'trade: thesis_snapshot is frozen once active');
 END;
 
 -- ─────────────────────────────────────────
@@ -245,11 +296,13 @@ CREATE TRIGGER ao_trade_exits_del BEFORE DELETE ON trade_exits
 BEGIN SELECT RAISE(ABORT, 'trade_exits is append-only'); END;
 
 DROP TRIGGER IF EXISTS ao_observation_upd;
-CREATE TRIGGER ao_observation_upd BEFORE UPDATE ON observation
-BEGIN SELECT RAISE(ABORT, 'observation is append-only'); END;
 DROP TRIGGER IF EXISTS ao_observation_del;
-CREATE TRIGGER ao_observation_del BEFORE DELETE ON observation
-BEGIN SELECT RAISE(ABORT, 'observation is append-only'); END;
+DROP TRIGGER IF EXISTS setup_append_only_update;
+DROP TRIGGER IF EXISTS setup_append_only_delete;
+CREATE TRIGGER setup_append_only_update BEFORE UPDATE ON setup
+BEGIN SELECT RAISE(ABORT, 'setup is append-only'); END;
+CREATE TRIGGER setup_append_only_delete BEFORE DELETE ON setup
+BEGIN SELECT RAISE(ABORT, 'setup is append-only'); END;
 
 DROP TRIGGER IF EXISTS ao_canvas_vh_upd;
 CREATE TRIGGER ao_canvas_vh_upd BEFORE UPDATE ON canvas_version_history
@@ -330,7 +383,7 @@ CREATE TRIGGER event_trade_created
 AFTER INSERT ON trade
 BEGIN
     INSERT INTO entity_events (id, entity_type, entity_id, event_type, new_status)
-    VALUES (lower(hex(randomblob(16))), 'trade', NEW.id, 'created', 'open');
+    VALUES (lower(hex(randomblob(16))), 'trade', NEW.id, 'created', NEW.status);
 END;
 
 DROP TRIGGER IF EXISTS event_trade_closed;
@@ -342,7 +395,33 @@ BEGIN
         id, entity_type, entity_id, event_type, old_status, new_status
     ) VALUES (
         lower(hex(randomblob(16))), 'trade', NEW.id,
-        'status_changed', 'open', 'closed'
+        'status_changed', OLD.status, NEW.status
+    );
+END;
+
+DROP TRIGGER IF EXISTS event_trade_activated;
+CREATE TRIGGER event_trade_activated
+AFTER UPDATE OF status ON trade
+WHEN NEW.status = 'active' AND OLD.status = 'idea'
+BEGIN
+    INSERT INTO entity_events (
+        id, entity_type, entity_id, event_type, old_status, new_status
+    ) VALUES (
+        lower(hex(randomblob(16))), 'trade', NEW.id,
+        'status_changed', 'idea', 'active'
+    );
+END;
+
+DROP TRIGGER IF EXISTS event_trade_discarded;
+CREATE TRIGGER event_trade_discarded
+AFTER UPDATE OF status ON trade
+WHEN NEW.status = 'discarded'
+BEGIN
+    INSERT INTO entity_events (
+        id, entity_type, entity_id, event_type, old_status, new_status
+    ) VALUES (
+        lower(hex(randomblob(16))), 'trade', NEW.id,
+        'status_changed', OLD.status, 'discarded'
     );
 END;
 
@@ -350,30 +429,32 @@ DROP TRIGGER IF EXISTS event_observation_created;
 CREATE TRIGGER event_observation_created
 AFTER INSERT ON observation
 BEGIN
-    INSERT INTO entity_events (id, entity_type, entity_id, event_type)
-    VALUES (lower(hex(randomblob(16))), 'observation', NEW.id, 'created');
+    INSERT INTO entity_events (id, entity_type, entity_id, event_type, new_status)
+    VALUES (lower(hex(randomblob(16))), 'observation', NEW.id, 'created', NEW.status);
+END;
+
+DROP TRIGGER IF EXISTS event_observation_status_changed;
+CREATE TRIGGER event_observation_status_changed
+AFTER UPDATE OF status ON observation
+WHEN OLD.status != NEW.status
+BEGIN
+    INSERT INTO entity_events (
+        id, entity_type, entity_id, event_type, old_status, new_status
+    ) VALUES (
+        lower(hex(randomblob(16))), 'observation', NEW.id,
+        'status_changed', OLD.status, NEW.status
+    );
 END;
 
 DROP TRIGGER IF EXISTS event_setup_created;
 CREATE TRIGGER event_setup_created
 AFTER INSERT ON setup
 BEGIN
-    INSERT INTO entity_events (id, entity_type, entity_id, event_type, new_status)
-    VALUES (lower(hex(randomblob(16))), 'setup', NEW.id, 'created', 'watching');
+    INSERT INTO entity_events (id, entity_type, entity_id, event_type)
+    VALUES (lower(hex(randomblob(16))), 'setup', NEW.id, 'created');
 END;
 
 DROP TRIGGER IF EXISTS event_setup_status_changed;
-CREATE TRIGGER event_setup_status_changed
-AFTER UPDATE OF status ON setup
-WHEN OLD.status != NEW.status
-BEGIN
-    INSERT INTO entity_events (
-        id, entity_type, entity_id, event_type, old_status, new_status
-    ) VALUES (
-        lower(hex(randomblob(16))), 'setup', NEW.id,
-        'status_changed', OLD.status, NEW.status
-    );
-END;
 
 DROP TRIGGER IF EXISTS event_review_phase1_filed;
 CREATE TRIGGER event_review_phase1_filed

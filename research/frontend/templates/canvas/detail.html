@@ -11,7 +11,7 @@
     showAddCC: false,
     showAddIC: false,
     protocol1: null,
-    showProtocol1: false
+    showProtocol1(data) { this.protocol1 = data; }
 }">
 
     <!-- Back button (change spec Task 011 delta) -->
@@ -22,7 +22,7 @@
         <div class="protocol-banner protocol-banner-1 protocol-banner-enter">
             <span class="protocol-banner-label">Protocol 1 —</span>
             <span x-text="protocol1.action_required"></span>
-            <button class="btn-ghost" style="color: var(--color-warning); margin-left: auto" @click="showProtocol1 = false">Dismiss</button>
+            <button class="btn-ghost" style="color: var(--color-warning); margin-left: auto" @click="protocol1 = null">Dismiss</button>
         </div>
     </template>
 

@@ -34,7 +34,7 @@
         <span style="font-family: var(--font-data); font-size: var(--text-sm); color: var(--color-text-secondary)">{{ trade.created_at }}</span>
 
         <div style="margin-left: auto; display: flex; gap: var(--space-2)">
-            {% if trade.status == 'open' %}
+            {% if trade.status == 'active' %}
             <button class="btn btn-danger btn-compact" onclick="
                 if (confirm('Close this trade?')) {
                     fetch('{{ '/trade/%s/close' % trade.id }}', {method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify({})}).then(r => { if(r.ok) location.reload(); });
@@ -52,20 +52,163 @@
     <div style="font-family: var(--font-ui); font-size: var(--text-sm); color: var(--color-text-tertiary)">No linked thesis.</div>
     {% endif %}
 
+    <!-- ── Idea state: activate form ────────────────────────────────── -->
+    {% if trade.status == 'idea' %}
+    <div class="card" style="margin-bottom: var(--space-6)"
+         x-data="{
+             canvasId: '',
+             thesisId: '',
+             entryRules: '',
+             exitRules: '',
+             activating: false,
+             error: '',
+             forceChange: false,
+             async activate() {
+                 if (!this.thesisId || !this.entryRules || !this.exitRules) return;
+                 this.activating = true;
+                 this.error = '';
+                 const r = await fetch('/trade/{{ trade.id }}/activate', {
+                     method: 'PATCH',
+                     headers: {'Content-Type': 'application/json'},
+                     body: JSON.stringify({
+                         thesis_id: this.thesisId,
+                         entry_rules_stated: this.entryRules,
+                         exit_rules_stated: this.exitRules,
+                         force_thesis_change: this.forceChange
+                     })
+                 });
+                 if (r.ok) {
+                     window.location.reload();
+                 } else if (r.status === 409) {
+                     const d = await r.json();
+                     this.error = d.detail;
+                     this.forceChange = true;
+                     this.activating = false;
+                 } else {
+                     this.activating = false;
+                 }
+             }
+         }">
+        <div class="section-header" style="margin-bottom: var(--space-4)">Activate trade</div>
+        <p style="font-family: var(--font-ui); font-size: var(--text-sm);
+                  color: var(--color-text-secondary); margin-bottom: var(--space-4)">
+            Link a thesis and define entry/exit rules to open this trade.
+        </p>
+
+        <!-- Canvas typeahead -->
+        <div style="margin-bottom: var(--space-3)">
+            <label style="font-family: var(--font-ui); font-size: var(--text-sm); color: var(--color-text-secondary); display: block; margin-bottom: var(--space-1)">Canvas</label>
+            <input type="text" class="form-input" id="activate-canvas-typeahead"
+                   placeholder="Search canvases..."
+                   hx-get="/canvas/search"
+                   hx-trigger="input changed delay:300ms"
+                   hx-target="#activate-canvas-results"
+                   hx-vals='js:{q: this.value}'>
+            <div id="activate-canvas-results" style="margin-top: 4px"></div>
+        </div>
+
+        <!-- Thesis typeahead -->
+        <div style="margin-bottom: var(--space-3)">
+            <label style="font-family: var(--font-ui); font-size: var(--text-sm); color: var(--color-text-secondary); display: block; margin-bottom: var(--space-1)">Thesis</label>
+            <template x-if="canvasId">
+                <div>
+                    <input type="text" class="form-input" id="activate-thesis-typeahead"
+                           placeholder="Search theses..."
+                           hx-get="/thesis/search"
+                           hx-trigger="input changed delay:300ms"
+                           hx-target="#activate-thesis-results"
+                           :hx-vals="JSON.stringify({q: document.getElementById('activate-thesis-typeahead')?.value || '', canvas_id: canvasId})"
+                           x-init="$nextTick(() => { $el.setAttribute('hx-vals', JSON.stringify({q: '', canvas_id: canvasId})); htmx.process($el) })">
+                    <div id="activate-thesis-results" style="margin-top: 4px"></div>
+                </div>
+            </template>
+            <template x-if="!canvasId">
+                <div style="font-family: var(--font-ui); font-size: var(--text-sm); color: var(--color-text-tertiary)">Select a canvas first.</div>
+            </template>
+            <template x-if="thesisId">
+                <div style="margin-top: var(--space-1); font-family: var(--font-ui); font-size: var(--text-sm); color: var(--color-text-secondary)">Thesis selected</div>
+            </template>
+        </div>
+
+        <!-- Entry rules -->
+        <div style="margin-bottom: var(--space-3)">
+            <label style="font-family: var(--font-ui); font-size: var(--text-sm); color: var(--color-text-secondary); display: block; margin-bottom: var(--space-1)">Entry rules</label>
+            <textarea class="form-textarea" x-model="entryRules" rows="2"
+                      placeholder="e.g. Buy on breakout above 200dma" style="min-height: 55px"></textarea>
+        </div>
+
+        <!-- Exit rules -->
+        <div style="margin-bottom: var(--space-3)">
+            <label style="font-family: var(--font-ui); font-size: var(--text-sm); color: var(--color-text-secondary); display: block; margin-bottom: var(--space-1)">Exit rules</label>
+            <textarea class="form-textarea" x-model="exitRules" rows="2"
+                      placeholder="e.g. Stop at 190, target at 220" style="min-height: 55px"></textarea>
+        </div>
+
+        <template x-if="error">
+            <div style="color: var(--color-warning); font-family: var(--font-ui);
+                        font-size: var(--text-sm); margin-bottom: var(--space-3)"
+                 x-text="error + ' Click Activate again to confirm.'"></div>
+        </template>
+
+        <div style="display: flex; gap: var(--space-2)">
+            <button class="btn btn-primary btn-compact"
+                    :disabled="!thesisId || !entryRules || !exitRules || activating"
+                    @click="activate()">
+                <span x-text="activating ? 'Activating…' : (forceChange ? 'Confirm change' : 'Activate')"></span>
+            </button>
+            <button class="btn-ghost btn-compact"
+                    onclick="if(confirm('Discard this idea?')) {
+                        fetch('/trade/{{ trade.id }}/discard', {method:'PATCH'})
+                        .then(r => { if(r.ok) window.location.href='/'; })
+                    }">
+                Discard idea
+            </button>
+        </div>
+    </div>
+
+    <script>
+    // Canvas/thesis search result click handlers for activate form
+    document.addEventListener('htmx:afterSwap', function(e) {
+        if (e.target.id === 'activate-canvas-results') {
+            e.target.querySelectorAll('[data-canvas-id]').forEach(function(el) {
+                el.addEventListener('click', function() {
+                    const comp = Alpine.$data(document.querySelector('.card[x-data]'));
+                    comp.canvasId = el.dataset.canvasId;
+                    document.getElementById('activate-canvas-typeahead').value = el.textContent.trim();
+                    e.target.innerHTML = '';
+                });
+            });
+        }
+        if (e.target.id === 'activate-thesis-results') {
+            e.target.querySelectorAll('[data-thesis-id]').forEach(function(el) {
+                el.addEventListener('click', function() {
+                    const comp = Alpine.$data(document.querySelector('.card[x-data]'));
+                    comp.thesisId = el.dataset.thesisId;
+                    document.getElementById('activate-thesis-typeahead').value = el.textContent.trim();
+                    e.target.innerHTML = '';
+                });
+            });
+        }
+    });
+    </script>
+    {% endif %}
+
     <!-- ── Frozen fields ─────────────────────────────────────────────── -->
+    {% if trade.status != 'idea' %}
     <div class="section-header" style="margin-top: var(--space-6)">Rules</div>
     <div style="margin-bottom: var(--space-3)">
         <div style="font-family: var(--font-ui); font-size: var(--text-xs); color: var(--color-text-tertiary); text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: var(--space-1)">Entry rules</div>
-        {{ readonly(content=trade.entry_rules_stated, frozen_label="Frozen at open") }}
+        {{ readonly(content=trade.entry_rules_stated, frozen_label="Frozen at activation") }}
     </div>
     <div style="margin-bottom: var(--space-3)">
         <div style="font-family: var(--font-ui); font-size: var(--text-xs); color: var(--color-text-tertiary); text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: var(--space-1)">Exit rules</div>
-        {{ readonly(content=trade.exit_rules_stated, frozen_label="Frozen at open") }}
+        {{ readonly(content=trade.exit_rules_stated, frozen_label="Frozen at activation") }}
     </div>
     <div style="margin-bottom: var(--space-3)">
         <div style="font-family: var(--font-ui); font-size: var(--text-xs); color: var(--color-text-tertiary); text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: var(--space-1)">Thesis snapshot</div>
-        {{ readonly(content=trade.thesis_snapshot, frozen_label="Frozen at open") }}
+        {{ readonly(content=trade.thesis_snapshot, frozen_label="Frozen at activation") }}
     </div>
+    {% endif %}
 
     <!-- ── Entries (append-only) ─────────────────────────────────────── -->
     <div class="section-header" style="margin-top: var(--space-6)">Entries</div>
@@ -93,7 +236,7 @@
     </table>
     {% endif %}
 
-    {% if trade.status == 'open' %}
+    {% if trade.status == 'active' %}
     <div x-show="!showAddEntry" style="color: var(--color-text-tertiary); cursor: pointer; padding: var(--space-2) 0; font-size: var(--text-sm)"
          @click="showAddEntry = true">+ Add entry</div>
 
@@ -161,7 +304,7 @@
     </table>
     {% endif %}
 
-    {% if trade.status == 'open' %}
+    {% if trade.status == 'active' %}
     <div x-show="!showAddExit" style="color: var(--color-text-tertiary); cursor: pointer; padding: var(--space-2) 0; font-size: var(--text-sm)"
          @click="showAddExit = true">+ Add exit</div>
 

@@ -54,20 +54,19 @@ CREATE TABLE IF NOT EXISTS canvas_version_history (
 
 -- ─────────────────────────────────────────
 -- SETUP
--- No FKs to thesis or observation — those are in junction tables below.
+-- Structured analytical entity — append-only, many-to-many thesis via setup_thesis_links.
 -- ─────────────────────────────────────────
 
 CREATE TABLE IF NOT EXISTS setup (
-    id                 TEXT PRIMARY KEY,
-    instrument         TEXT NOT NULL,
-    setup_type         TEXT NOT NULL,
-    status             TEXT NOT NULL DEFAULT 'watching'
-                           CHECK(status IN ('watching', 'taken', 'passed')),
-    note               TEXT NOT NULL,
-    passed_reason      TEXT,
-    passed_reason_type TEXT CHECK(passed_reason_type IN ('psychological', 'analytical')),
-    date               TEXT NOT NULL,
-    created_at         TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+    id         TEXT PRIMARY KEY,
+    name       TEXT NOT NULL DEFAULT '',
+    instrument TEXT NOT NULL,
+    type       TEXT NOT NULL DEFAULT 'technical'
+                   CHECK(type IN ('technical', 'vol', 'flow')),
+    timeframe  TEXT NOT NULL DEFAULT '',
+    setup_note TEXT NOT NULL DEFAULT '',
+    date       TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 );
 
 CREATE TABLE IF NOT EXISTS setup_images (
@@ -152,16 +151,33 @@ CREATE TABLE IF NOT EXISTS thesis_version_history (
 
 CREATE TABLE IF NOT EXISTS trade (
     id                 TEXT PRIMARY KEY,
-    thesis_id          TEXT NOT NULL REFERENCES thesis(id),
-    instrument_type    TEXT NOT NULL
+    -- Idea fields: populated at creation. Nullable because idea rows
+    -- may not yet have thesis context.
+    name               TEXT NOT NULL DEFAULT '',
+    instrument         TEXT,
+    idea_note          TEXT,
+    -- Activation fields: populated at idea→active transition.
+    -- DECISION: thesis_id is nullable. Trades begin as 'idea' rows with no
+    -- thesis. thesis_id is required only at the idea→active transition,
+    -- enforced by trade_active_gate trigger. entry_rules_stated,
+    -- exit_rules_stated, and thesis_snapshot are also nullable for the
+    -- same reason — frozen at activation. Date: 2026-04-30.
+    thesis_id          TEXT REFERENCES thesis(id),
+    instrument_type    TEXT NOT NULL DEFAULT 'equity'
                            CHECK(instrument_type IN ('equity', 'option', 'future', 'fx', 'other')),
-    entry_rules_stated TEXT NOT NULL,   -- frozen at open
-    exit_rules_stated  TEXT NOT NULL,   -- frozen at open
-    thesis_snapshot    TEXT NOT NULL,   -- frozen at open
-    status             TEXT NOT NULL DEFAULT 'open' CHECK(status IN ('open', 'closed')),
+    entry_rules_stated TEXT,
+    exit_rules_stated  TEXT,
+    -- thesis_snapshot captures thesis.narrative at activation time.
+    -- It records the narrative only (not win_condition, kill conditions,
+    -- or status) — this is intentional minimalism. The full thesis state
+    -- is navigable via thesis_id. Date: 2026-04-30.
+    thesis_snapshot    TEXT,
+    -- State
+    status             TEXT NOT NULL DEFAULT 'idea'
+                           CHECK(status IN ('idea', 'active', 'closed', 'discarded')),
     review_id          TEXT,
-    -- review_id is a soft FK (no REFERENCES clause) due to trade↔review circular dependency.
-    -- Referential integrity is enforced by the trade_review_id_fk trigger. See Design Decision 11.
+    -- review_id is a soft FK (no REFERENCES clause) due to trade↔review
+    -- circular dependency. Enforced by trade_review_id_fk trigger.
     created_at         TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
     closed_at          TEXT
 );
@@ -225,45 +241,45 @@ CREATE TABLE IF NOT EXISTS trade_option_legs (
 
 -- ─────────────────────────────────────────
 -- OBSERVATION
+-- Lightweight ambient capture — state machine (watching/taken/passed),
+-- many-to-many thesis via observation_thesis_links.
 -- ─────────────────────────────────────────
 
 CREATE TABLE IF NOT EXISTS observation (
-    id               TEXT PRIMARY KEY,
-    date             TEXT NOT NULL,
-    instrument       TEXT NOT NULL,
-    timeframe        TEXT NOT NULL,
-    type             TEXT NOT NULL CHECK(type IN ('technical', 'vol', 'flow')),
-    observation      TEXT NOT NULL,
-    linked_thesis_id TEXT REFERENCES thesis(id),
-    created_at       TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
-    -- append-only
-);
-
-CREATE TABLE IF NOT EXISTS observation_linked_canvases (
-    observation_id TEXT NOT NULL REFERENCES observation(id),
-    canvas_id      TEXT NOT NULL REFERENCES canvas(id),
-    created_at     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
-    PRIMARY KEY (observation_id, canvas_id)
-);
-
-CREATE TABLE IF NOT EXISTS observation_images (
-    id             TEXT PRIMARY KEY,
-    observation_id TEXT NOT NULL REFERENCES observation(id),
-    filename       TEXT NOT NULL,
-    filepath       TEXT NOT NULL,
-    caption        TEXT,
-    parsed_fields  TEXT,
-    created_at     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+    id                 TEXT PRIMARY KEY,
+    name               TEXT NOT NULL DEFAULT '',
+    instrument         TEXT NOT NULL,
+    status             TEXT NOT NULL DEFAULT 'watching'
+                           CHECK(status IN ('watching', 'taken', 'passed')),
+    note               TEXT NOT NULL DEFAULT '',
+    passed_reason      TEXT,
+    passed_reason_type TEXT CHECK(passed_reason_type IN ('psychological', 'analytical')),
+    date               TEXT NOT NULL,
+    created_at         TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 );
 
 -- ─────────────────────────────────────────
--- SETUP JUNCTION TABLES
--- Canonical setup↔thesis and setup↔observation links.
+-- JUNCTION TABLES
 -- Defined after all referenced tables — resolves circular FK dependency.
--- setup_thesis_links is the sole junction for both directions; thesis_linked_setups
--- does not exist. To query setups linked to a thesis: SELECT from setup_thesis_links
--- WHERE thesis_id = ?
+-- observation_thesis_links: canonical observation↔thesis junction.
+-- observation_setup_links: observation→setup direction.
+-- setup_thesis_links: canonical setup↔thesis junction (new, starts empty).
+-- setup_linked_canvases: setup↔canvas junction (setup is the structured entity).
 -- ─────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS observation_thesis_links (
+    observation_id TEXT NOT NULL REFERENCES observation(id),
+    thesis_id      TEXT NOT NULL REFERENCES thesis(id),
+    created_at     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+    PRIMARY KEY (observation_id, thesis_id)
+);
+
+CREATE TABLE IF NOT EXISTS observation_setup_links (
+    observation_id TEXT NOT NULL REFERENCES observation(id),
+    setup_id       TEXT NOT NULL REFERENCES setup(id),
+    created_at     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+    PRIMARY KEY (observation_id, setup_id)
+);
 
 CREATE TABLE IF NOT EXISTS setup_thesis_links (
     setup_id   TEXT NOT NULL REFERENCES setup(id),
@@ -272,11 +288,11 @@ CREATE TABLE IF NOT EXISTS setup_thesis_links (
     PRIMARY KEY (setup_id, thesis_id)
 );
 
-CREATE TABLE IF NOT EXISTS setup_observation_links (
-    setup_id       TEXT NOT NULL REFERENCES setup(id),
-    observation_id TEXT NOT NULL REFERENCES observation(id),
-    created_at     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
-    PRIMARY KEY (setup_id, observation_id)
+CREATE TABLE IF NOT EXISTS setup_linked_canvases (
+    setup_id   TEXT NOT NULL REFERENCES setup(id),
+    canvas_id  TEXT NOT NULL REFERENCES canvas(id),
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+    PRIMARY KEY (setup_id, canvas_id)
 );
 
 -- ─────────────────────────────────────────
