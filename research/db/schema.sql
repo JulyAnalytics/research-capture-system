@@ -341,21 +341,6 @@ CREATE TABLE IF NOT EXISTS review (
 );
 
 -- ─────────────────────────────────────────
--- INBOX
--- ─────────────────────────────────────────
-
-CREATE TABLE IF NOT EXISTS inbox (
-    id                       TEXT PRIMARY KEY,
-    raw_text                 TEXT NOT NULL,
-    created_at               TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
-    routed_to_observation_id TEXT REFERENCES observation(id),
-    routed_to_action_id      TEXT REFERENCES action(id),
-    routed_to_setup_id       TEXT REFERENCES setup(id),
-    routed_to_thesis_id      TEXT REFERENCES thesis(id),
-    routed_at                TEXT
-);
-
--- ─────────────────────────────────────────
 -- ENTITY EVENT LOG
 -- Append-only. Populated exclusively by AFTER triggers.
 -- No application-layer write paths.
@@ -368,7 +353,7 @@ CREATE TABLE IF NOT EXISTS entity_events (
     entity_type TEXT NOT NULL
                     CHECK(entity_type IN (
                         'canvas', 'thesis', 'trade',
-                        'observation', 'review', 'setup'
+                        'observation', 'review', 'setup', 'insight'
                     )),
     entity_id   TEXT NOT NULL,
     event_type  TEXT NOT NULL
@@ -410,7 +395,7 @@ CREATE TABLE IF NOT EXISTS export_watermarks (
 );
 
 INSERT OR IGNORE INTO export_watermarks (entity_type) VALUES
-    ('canvas'), ('thesis'), ('observation'), ('review'), ('setup');
+    ('canvas'), ('thesis'), ('observation'), ('review'), ('setup'), ('insight');
 
 -- ─────────────────────────────────────────
 -- FAILED EXPORTS
@@ -427,4 +412,23 @@ CREATE TABLE IF NOT EXISTS failed_exports (
     failed_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
     resolved    INTEGER NOT NULL DEFAULT 0,
     UNIQUE(entity_type, entity_id)   -- latest failure record per entity; ON CONFLICT REPLACE
+);
+
+-- ─────────────────────────────────────────
+-- INSIGHT
+-- Ambient learning capture. Linkable to any entity via polymorphic
+-- linked_entity_type + linked_entity_id columns. No DB-level FK
+-- enforcement on the polymorphic link — see Design Decision (005_insight
+-- migration header) for rationale.
+-- ─────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS insight (
+    id                 TEXT PRIMARY KEY,
+    name               TEXT NOT NULL DEFAULT '',
+    note               TEXT NOT NULL,
+    linked_entity_type TEXT,
+    linked_entity_id   TEXT,
+    context_tag        TEXT,
+    created_at         TEXT NOT NULL
+                           DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 );

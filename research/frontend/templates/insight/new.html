@@ -1,0 +1,160 @@
+{% extends "base.html" %}
+
+{% block title %}Capture insight{% endblock %}
+
+{% block content %}
+<div x-data="{
+    name: '{{ prefill_name | e }}',
+    note: '',
+    contextTag: '',
+    showLink: false,
+    entityType: '',
+    entityId: '',
+    submitting: false,
+    error: '',
+    async submit() {
+        if (!this.note.trim()) return;
+        this.submitting = true;
+        this.error = '';
+        const body = {
+            name: this.name,
+            note: this.note,
+            context_tag: this.contextTag || null,
+        };
+        if (this.showLink && this.entityType && this.entityId) {
+            body.linked_entity_type = this.entityType;
+            body.linked_entity_id = this.entityId;
+        }
+        try {
+            const r = await fetch('/insight', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+            });
+            if (r.ok) {
+                const d = await r.json();
+                window.location.href = '/insight/' + d.id;
+            } else {
+                const d = await r.json().catch(() => ({}));
+                this.error = d.detail || 'Error saving insight';
+                this.submitting = false;
+            }
+        } catch (e) {
+            this.error = 'Network error';
+            this.submitting = false;
+        }
+    }
+}">
+
+    <button onclick="history.back()" class="btn-ghost btn-compact" style="margin-bottom: var(--space-2); color: var(--color-text-secondary)">&larr; Back</button>
+
+    <div class="breadcrumb" style="font-family: var(--font-ui); font-size: var(--text-xs);
+                color: var(--color-text-tertiary); margin-bottom: var(--space-2)">
+        <span>Insight</span>
+        <span class="breadcrumb-sep">/</span>
+        <span>New</span>
+    </div>
+
+    <div style="margin-bottom: var(--space-6)">
+        <h1 style="font-family: var(--font-ui); font-size: var(--text-xl); font-weight: 500; margin: 0">Capture insight</h1>
+    </div>
+
+    <!-- Name (optional) -->
+    <div style="margin-bottom: var(--space-4)">
+        <label style="font-family: var(--font-ui); font-size: var(--text-sm); color: var(--color-text-secondary); display: block; margin-bottom: var(--space-1)">Label (optional)</label>
+        <input type="text" class="form-input" x-model="name" placeholder="e.g. SPY regime shift note">
+    </div>
+
+    <!-- Note (required) -->
+    <div style="margin-bottom: var(--space-4)">
+        <label style="font-family: var(--font-ui); font-size: var(--text-sm); color: var(--color-text-secondary); display: block; margin-bottom: var(--space-1)">Insight</label>
+        <textarea class="form-textarea" x-model="note" rows="5"
+                  placeholder="What are you learning?"
+                  style="font-family: var(--font-prose); font-size: var(--text-prose); line-height: var(--text-prose-lh); min-height: 100px"></textarea>
+    </div>
+
+    <!-- Context tag (optional) -->
+    <div style="margin-bottom: var(--space-4)">
+        <label style="font-family: var(--font-ui); font-size: var(--text-sm); color: var(--color-text-secondary); display: block; margin-bottom: var(--space-1)">Context tag</label>
+        <input type="text" class="form-input" x-model="contextTag" placeholder="macro, pre-trade, process...">
+    </div>
+
+    <!-- Entity link (optional, collapsible) -->
+    <div style="margin-bottom: var(--space-5)">
+        <div style="font-family: var(--font-ui); font-size: var(--text-sm); color: var(--color-text-secondary);
+                    cursor: pointer; user-select: none; margin-bottom: var(--space-2)"
+             @click="showLink = !showLink">
+            <span x-text="showLink ? '&#9660;' : '&#9654;'"></span>
+            Link to entity (optional)
+        </div>
+        <div x-show="showLink" x-transition style="padding-left: var(--space-3); border-left: 2px solid var(--color-learning)">
+            <div style="margin-bottom: var(--space-3)">
+                <label style="font-family: var(--font-ui); font-size: var(--text-xs); color: var(--color-text-secondary); display: block; margin-bottom: 4px">Entity type</label>
+                <select class="form-select" x-model="entityType">
+                    <option value="">Select...</option>
+                    {% for et in valid_entity_types %}
+                    <option value="{{ et }}">{{ et }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <!-- Canvas -->
+            <div x-show="entityType === 'canvas'" style="margin-bottom: var(--space-3)">
+                <label style="font-family: var(--font-ui); font-size: var(--text-xs); color: var(--color-text-secondary); display: block; margin-bottom: 4px">Canvas</label>
+                <select class="form-select" x-model="entityId">
+                    <option value="">Select a canvas...</option>
+                    {% for c in canvases %}
+                    <option value="{{ c.id }}">{{ c.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <!-- Thesis -->
+            <div x-show="entityType === 'thesis'" style="margin-bottom: var(--space-3)">
+                <label style="font-family: var(--font-ui); font-size: var(--text-xs); color: var(--color-text-secondary); display: block; margin-bottom: 4px">Thesis</label>
+                <select class="form-select" x-model="entityId">
+                    <option value="">Select a thesis...</option>
+                    {% for t in theses %}
+                    <option value="{{ t.id }}">{{ t.instrument }} ({{ t.status }})</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <!-- Trade -->
+            <div x-show="entityType === 'trade'" style="margin-bottom: var(--space-3)">
+                <label style="font-family: var(--font-ui); font-size: var(--text-xs); color: var(--color-text-secondary); display: block; margin-bottom: 4px">Trade</label>
+                <select class="form-select" x-model="entityId">
+                    <option value="">Select a trade...</option>
+                    {% for tr in trades %}
+                    <option value="{{ tr.id }}">{{ tr.name }} ({{ tr.instrument_type }}, {{ tr.status }})</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <!-- Observation / Setup / Review (text input) -->
+            <div x-show="['observation','setup','review'].includes(entityType)" style="margin-bottom: var(--space-3)">
+                <label style="font-family: var(--font-ui); font-size: var(--text-xs); color: var(--color-text-secondary); display: block; margin-bottom: 4px">Entity ULID</label>
+                <input type="text" class="form-input" x-model="entityId" placeholder="Entity ULID">
+            </div>
+        </div>
+    </div>
+
+    <!-- Submit -->
+    <div style="display: flex; gap: var(--space-2); align-items: center">
+        <button type="button"
+                class="btn btn-primary btn-compact"
+                :disabled="!note.trim() || submitting"
+                @click="submit()">
+            <span x-text="submitting ? 'Saving…' : 'Capture insight'"></span>
+        </button>
+        <button class="btn-ghost btn-compact" onclick="history.back()">Cancel</button>
+    </div>
+
+    <template x-if="error">
+        <div style="color: var(--color-danger); font-family: var(--font-ui);
+                    font-size: var(--text-sm); margin-top: var(--space-2)"
+             x-text="error"></div>
+    </template>
+
+</div>
+{% endblock %}

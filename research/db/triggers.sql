@@ -475,3 +475,13 @@ BEGIN
         lower(hex(randomblob(16))), 'review', NEW.id, 'filed', 'phase2'
     );
 END;
+
+-- ─── INSIGHT EVENT LOG ────────────────────────────────────────────────────────
+
+DROP TRIGGER IF EXISTS event_insight_created;
+CREATE TRIGGER event_insight_created
+AFTER INSERT ON insight
+BEGIN
+    INSERT INTO entity_events (id, entity_type, entity_id, event_type)
+    VALUES (lower(hex(randomblob(16))), 'insight', NEW.id, 'created');
+END;

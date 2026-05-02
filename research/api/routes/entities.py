@@ -5,7 +5,7 @@ from api.database import get_db
 
 router = APIRouter(prefix="/api")
 
-VALID_TYPES = {"canvas", "thesis", "observation", "setup", "trade", "review"}
+VALID_TYPES = {"canvas", "thesis", "observation", "setup", "trade", "review", "insight"}
 
 
 async def _fetch_entities(type: Optional[str], db):
@@ -145,6 +145,26 @@ async def _fetch_entities(type: Optional[str], db):
                 "links": {
                     "trade_instrument": r["trade_instrument"],
                     "phase_indicator": r["phase_indicator"],
+                },
+            })
+
+    if type is None or type == "insight":
+        rows = await db.execute_fetchall(
+            """SELECT i.id, i.name, i.note, i.linked_entity_type,
+                      i.linked_entity_id, i.context_tag, i.created_at
+               FROM insight i
+               ORDER BY i.created_at DESC"""
+        )
+        for r in rows:
+            results.append({
+                "entity_type": "insight",
+                "id": r["id"],
+                "display_name": r["name"] or r["note"][:60],
+                "status": r["context_tag"] or "",
+                "last_updated": r["created_at"],
+                "links": {
+                    "linked_entity_type": r["linked_entity_type"] or "",
+                    "linked_entity_id":   r["linked_entity_id"] or "",
                 },
             })
 

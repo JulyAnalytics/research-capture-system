@@ -1,6 +1,6 @@
 # Research Capture System — Project Map
 
-**Last updated: 2026-05-01 after Mode 3 Session B — trade routes/models/templates complete; idea/active/closed/discarded fully operational**
+**Last updated: 2026-05-02 after Mode 4 Session B — insight routes/models/templates complete; capture dropdown updated (7 entries); entity list includes insight**
 
 ---
 
@@ -19,7 +19,7 @@
 | Migration runner | `research/db/migrations/runner.py` | complete |
 | DB connection layer | `research/api/database.py` | complete |
 | App config | `research/api/config.py` | complete |
-| FastAPI app | `research/api/main.py` | complete — lifespan, health check, static mount, GET / renders home.html with entity data, canvas/thesis/setup/trade/observation/review/action/ritual/inbox/entities/images routers |
+| FastAPI app | `research/api/main.py` | complete — lifespan, health check, static mount, GET / renders home.html with entity data, canvas/thesis/setup/trade/observation/review/action/ritual/entities/images routers |
 | Canvas routes | `research/api/routes/canvas.py` | complete — CRUD + Protocol 1 + cross-currents + invalidation conditions + HTML rendering + panel + search + confirm-reviewed |
 | Thesis routes | `research/api/routes/thesis.py` | complete — CRUD + state transitions + kill conditions + decision points + canvas links + version history + HTML rendering + panel + search with canvas_id filter; linked_setups query updated to new setup column set (name, type) |
 | Setup routes | `research/api/routes/setup.py` | complete — GET /new, POST, GET /{id}, POST /{id}/link-thesis/{tid}, POST /{id}/link-canvas/{cid}; no PATCH (append-only) |
@@ -27,10 +27,11 @@
 | Observation routes | `research/api/routes/observation.py` | complete — GET /new, POST, GET /{id}, PATCH /{id}/status, POST /{id}/link-thesis/{tid}, POST /{id}/link-setup/{sid} |
 | Review routes | `research/api/routes/review.py` | complete — Phase 1 + Zone 3 clearance + Phase 2 |
 | Action routes | `research/api/routes/action.py` | complete — CRUD + done + cancel with note |
-| Ritual routes | `research/api/routes/ritual.py` | complete — morning ritual (staleness sweep, active positions, overdue actions) + confirm/clear + HTML rendering via Accept header |
-| Inbox routes | `research/api/routes/inbox.py` | complete — capture, list, get, route to observation/action/setup/thesis-update |
-| Entities route | `research/api/routes/entities.py` | complete — GET /api/entities with type filter and per-type links + reusable _fetch_entities(); updated for obs/setup swap (setup_linked_canvases, observation_thesis_links, new column names) |
+| Exposure board routes | `research/api/routes/ritual.py` | complete — GET /exposure (exposure board), POST /exposure/staleness/{type}/{id}, POST /exposure/position/{id}/clear, GET /exposure/counts; evening routing removed |
+| Entities route | `research/api/routes/entities.py` | complete — GET /api/entities with type filter and per-type links + reusable _fetch_entities(); updated for obs/setup swap; insight branch added (Mode 4) |
 | Image routes | `research/api/routes/images.py` | complete — upload + serve with path traversal protection for observations and setups |
+| Insight model | `research/api/models/insight.py` | complete — InsightCreate with paired-field validator |
+| Insight routes | `research/api/routes/insight.py` | complete — GET /new, POST, GET /{id}; polymorphic link validation against VALID_ENTITY_TYPES |
 | Analytics routes | `research/api/routes/analytics.py` | not started |
 | Protocol 1 | `research/api/protocols/protocol1.py` | complete — check_protocol1(db, canvas_id), extracted from canvas.py inline; read-only, no side effects |
 | Protocol 2 | `research/api/protocols/protocol2.py` | complete (partial) — check_protocol2(db, thesis_id=None), called from thesis detail load and canvas PATCH; canvas PATCH call is unscoped (see Intentional Deviations #4) |
@@ -47,9 +48,10 @@
 | Image models | `research/api/models/image.py` | complete |
 | CSS design system | `research/frontend/static/css/` | complete — 6 files (tokens, base, layout, components, pages, motion) |
 | Base template | `research/frontend/templates/base.html` | complete — shell, left nav, two-target capture component, entity filter chips, Alpine.js + HTMX |
-| Capture component | `research/frontend/templates/components/capture.html` | complete — dropdown links all 6 entities to /entity/new; capture Enter → /observation/new?title= |
-| Morning ritual template | `research/frontend/templates/ritual/morning.html` | complete — staleness sweep + positions + actions sections with collapse |
-| Evening routing template | `research/frontend/templates/ritual/evening.html` | complete — renamed "Capture", editable capture text, 4 route types, direct mode (?direct=1) for + dropdown, typeahead for canvas/thesis |
+| Capture component | `research/frontend/templates/components/capture.html` | complete — dropdown links all 7 entities (Insight added Mode 4); capture Enter → /observation/new?title= |
+| Insight new template | `research/frontend/templates/insight/new.html` | complete — note, name, context_tag, optional entity link |
+| Insight detail template | `research/frontend/templates/insight/detail.html` | complete — read-only prose, linked entity chip |
+| Exposure board template | `research/frontend/templates/exposure/board.html` | complete — staleness sweep, active positions, overdue actions; renamed from ritual/morning.html |
 | Canvas detail template | `research/frontend/templates/canvas/detail.html` | complete — narrative prose field + cross-currents + invalidation conditions + back button + right panel |
 | Canvas panel template | `research/frontend/templates/canvas/panel.html` | complete — linked theses + setup backlinks (canvas_setup_backlinks view) + cross-currents + version history |
 | Thesis detail template | `research/frontend/templates/thesis/detail.html` | complete — identity bar + worst_case_dollar + narrative + win condition + kill conditions + decision points + back button + right panel |
@@ -110,10 +112,10 @@ All in `research/data/research.db` (created at startup by `db/init.py`).
 | `observation_setup_links` | Observation→setup junction (renamed from setup_observation_links; data migrated) |
 | `action` | Actions with cancellation enforcement |
 | `review` | Trade reviews — Phase 1, Zone 3, Phase 2 |
-| `inbox` | Quick capture queue |
 | `entity_events` | Append-only event log (populated by triggers only) |
-| `export_watermarks` | Per-entity-type export watermarks (5 rows: canvas/thesis/observation/review/setup) |
+| `export_watermarks` | Per-entity-type export watermarks (6 rows: canvas/thesis/observation/review/setup/insight) |
 | `failed_exports` | Dead-letter queue for export failures |
+| `insight` | Ambient learning capture — polymorphic link to any entity; see Design Decision in 005_insight.sql |
 
 ---
 
@@ -132,6 +134,9 @@ All in `research/data/research.db` (created at startup by `db/init.py`).
 |---|---|---|
 | `research/tests/test_schema.py` | `research/tests/test_state_machines.py` | 2026-04-28 |
 | `research/frontend/templates/observation/form.html` | `research/frontend/templates/observation/new.html` | 2026-04-30 |
+| `research/api/routes/inbox.py` | Deleted — inbox deprecated in favour of /entity/new direct capture | 2026-05-02 |
+| `research/frontend/templates/ritual/morning.html` | Moved to `exposure/board.html` — renamed to Exposure Board | 2026-05-02 |
+| `research/frontend/templates/ritual/evening.html` | Deleted — evening routing removed; direct capture via /entity/new pages | 2026-05-02 |
 
 ---
 
@@ -189,6 +194,10 @@ These are deliberate departures from the task spec that were validated as improv
 6. **Phase 2 out-of-scope edit: `thesis.py` and `thesis/panel.html`** — The Phase 2 spec listed `thesis.py` in "do not modify" constraints, but the Phase 1 schema swap had left two `linked_setups` queries in `thesis.py` (in `get_thesis` and `thesis_panel`) selecting `s.setup_type` and `s.status` — columns that no longer exist on `setup`. The panel chip in `thesis/panel.html` referenced the same dead columns. These were failing silently on any thesis with linked setups. Both were corrected during Phase 2 (queries updated to `s.name, s.type`; chip updated to `s.name ~ " — " ~ s.instrument`). The "do not modify" constraint was a blast-radius guard against accidental drift, not a prohibition on fixing direct Phase 1 breakage in thesis. Recorded here so future specs know `thesis.py` was last touched in Phase 2.
 
 7. **Trade state machine expanded** — idea/active/closed/discarded. 'active' replaces 'open' throughout. thesis_id nullable at creation; required at idea→active (trade_active_gate trigger). thesis_active_gate requires trade.status = 'active'. Thesis substitution during activation allowed with force_thesis_change=true (two-click confirm pattern, no modal). thesis_snapshot captures narrative only — see schema DECISION comment.
+
+8. **Morning ritual renamed to Exposure Board** — URL moved from `/ritual/morning` to `/exposure`. Evening routing page removed (`/ritual/evening` returns 404). `ritual.py` retained as the route file (not renamed). `GET /exposure/counts` added for nav badge population. Nav updated with three sub-labels (Staleness, Positions, Actions) each with counts badges fetched on load.
+
+9. **insight uses polymorphic link pattern** — complete. VALID_ENTITY_TYPES enforced at route layer in api/routes/insight.py. Exporter must add orphan check when insight export is implemented in Tasks 016–018.
 
 ---
 

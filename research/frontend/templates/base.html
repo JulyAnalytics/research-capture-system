@@ -17,7 +17,16 @@
 <div class="shell" x-data="{ captureOpen: false, createOpen: false }">
 
     <!-- ── Left navigation ─────────────────────────────────────── -->
-    <nav class="nav-left">
+    <nav class="nav-left"
+         x-data="{
+             exposureCounts: { stale_count: 0, position_count: 0, action_count: 0, aggregate: 0 }
+         }"
+         x-init="
+             fetch('/exposure/counts')
+               .then(r => r.json())
+               .then(d => { exposureCounts = d; })
+               .catch(() => {})
+         ">
 
         <div class="nav-identity">research capture</div>
         <div class="nav-divider"></div>
@@ -25,17 +34,49 @@
         <!-- Capture component (two-target) -->
         {% include "components/capture.html" %}
 
-        <!-- Inbox -->
-        <a href="/ritual/evening" class="nav-item">
-            Inbox
-            <span class="badge" data-status="overdue" id="inbox-count" style="display:none">0</span>
-        </a>
-
         <div class="nav-divider"></div>
 
-        <!-- Workflow modes -->
-        <a href="/ritual/morning" class="nav-item">Morning ritual</a>
-        <a href="/ritual/evening" class="nav-item">Evening routing</a>
+        <!-- Exposure board -->
+        <a href="/exposure" class="nav-item" style="display: block">
+            Exposure board
+            <span class="badge"
+                  data-status="overdue"
+                  x-show="exposureCounts.aggregate > 0"
+                  x-text="exposureCounts.aggregate"
+                  style="margin-left: var(--space-2)"></span>
+        </a>
+        <div style="padding: 0 var(--space-4) var(--space-2)">
+            <div style="display: flex; justify-content: space-between; align-items: center;
+                        padding: var(--space-1) 0;
+                        font-family: var(--font-ui); font-size: var(--text-xs);
+                        color: var(--color-text-tertiary)">
+                <span>Staleness</span>
+                <span class="badge"
+                      data-status="overdue"
+                      x-show="exposureCounts.stale_count > 0"
+                      x-text="exposureCounts.stale_count"></span>
+            </div>
+            <div style="display: flex; justify-content: space-between; align-items: center;
+                        padding: var(--space-1) 0;
+                        font-family: var(--font-ui); font-size: var(--text-xs);
+                        color: var(--color-text-tertiary)">
+                <span>Positions</span>
+                <span class="badge"
+                      data-status="active"
+                      x-show="exposureCounts.position_count > 0"
+                      x-text="exposureCounts.position_count"></span>
+            </div>
+            <div style="display: flex; justify-content: space-between; align-items: center;
+                        padding: var(--space-1) 0;
+                        font-family: var(--font-ui); font-size: var(--text-xs);
+                        color: var(--color-text-tertiary)">
+                <span>Actions</span>
+                <span class="badge"
+                      data-status="overdue"
+                      x-show="exposureCounts.action_count > 0"
+                      x-text="exposureCounts.action_count"></span>
+            </div>
+        </div>
 
         <div class="nav-divider"></div>
 

@@ -196,8 +196,9 @@ def test_preflight(conn):
         "trade", "trade_entries", "trade_exits", "trade_options_meta",
         "trade_option_legs", "observation", "observation_thesis_links",
         "observation_setup_links",
-        "action", "review", "inbox", "entity_events", "canvas_source_documents",
+        "action", "review", "entity_events", "canvas_source_documents",
         "export_watermarks", "failed_exports", "schema_version",
+        "insight",
     }
     missing = required_tables - tables
     assert not missing, f"Missing tables: {missing}"
@@ -213,6 +214,7 @@ def test_preflight(conn):
         "passed_observation_analysis", "passed_observation_detail",
         "review_mistake_distribution", "decision_point_deviations",
         "options_iv_comparison", "invalidation_post_mortem", "thesis_lifespan", "review_lag",
+        "recent_insights",
     }
     missing_v = required_views - views
     assert not missing_v, f"Missing views: {missing_v}"
@@ -1214,6 +1216,70 @@ def test_event_trade_activated(conn):
     _ok("test_event_trade_activated")
 
 
+# -- 13. Insight entity tests ----------------------------------------------------
+
+def test_insight_creation(conn):
+    """Insight row inserts with minimal fields (name optional, note required)."""
+    _exec(conn,
+          "INSERT INTO insight (id, note) VALUES ('INS1','first insight')")
+    row = _row(conn, "SELECT note, linked_entity_type FROM insight WHERE id='INS1'")
+    assert row[0] == 'first insight'
+    assert row[1] is None  # no link
+    _ok("test_insight_creation")
+
+
+def test_insight_with_polymorphic_link(conn):
+    """Insight links to canvas via polymorphic columns."""
+    _exec(conn,
+          "INSERT INTO canvas (id, name, narrative, last_reviewed) "
+          "VALUES ('C1','Test canvas','n','2026-01-01')")
+    _exec(conn,
+          "INSERT INTO insight (id, note, linked_entity_type, linked_entity_id) "
+          "VALUES ('INS2','canvas insight','canvas','C1')")
+    row = _row(conn,
+               "SELECT linked_entity_type, linked_entity_id "
+               "FROM insight WHERE id='INS2'")
+    assert row[0] == 'canvas'
+    assert row[1] == 'C1'
+    _ok("test_insight_with_polymorphic_link")
+
+
+def test_insight_event_log(conn):
+    """event_insight_created trigger fires on INSERT and logs to entity_events."""
+    _exec(conn, "INSERT INTO insight (id, note) VALUES ('INS3','logged insight')")
+    row = _row(conn,
+               "SELECT entity_type, event_type FROM entity_events "
+               "WHERE entity_id='INS3'")
+    assert row is not None, "No entity_events row for insight"
+    assert row[0] == 'insight'
+    assert row[1] == 'created'
+    _ok("test_insight_event_log")
+
+
+def test_entity_events_accepts_insight(conn):
+    """entity_events CHECK constraint now permits entity_type='insight'."""
+    _exec(conn, "INSERT INTO insight (id, note) VALUES ('INS4','chk insight')")
+    # Direct insert to entity_events with type='insight' must succeed
+    _exec(conn,
+          "INSERT INTO entity_events (id, entity_type, entity_id, event_type) "
+          "VALUES ('EV1','insight','INS4','updated')")
+    row = _row(conn,
+               "SELECT entity_type FROM entity_events WHERE id='EV1'")
+    assert row[0] == 'insight'
+    _ok("test_entity_events_accepts_insight")
+
+
+def test_insight_export_watermark_exists(conn):
+    """export_watermarks has a row for insight (6th entry)."""
+    row = _row(conn,
+               "SELECT entity_type FROM export_watermarks "
+               "WHERE entity_type='insight'")
+    assert row is not None, "No export_watermark row for insight"
+    wm_count = _val(conn, "SELECT COUNT(*) FROM export_watermarks")
+    assert wm_count == 6, f"Expected 6 watermarks, got {wm_count}"
+    _ok("test_insight_export_watermark_exists")
+
+
 # -- 11. Summary --------------------------------------------------------------
 
 
@@ -1309,6 +1375,12 @@ TESTS = [
     test_thesis_active_gate_trade_not_active,
     test_event_trade_created_idea,
     test_event_trade_activated,
+    # 13. Insight entity
+    test_insight_creation,
+    test_insight_with_polymorphic_link,
+    test_insight_event_log,
+    test_entity_events_accepts_insight,
+    test_insight_export_watermark_exists,
 ]
 
 

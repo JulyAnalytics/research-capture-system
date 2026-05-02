@@ -5,7 +5,7 @@ from fastapi.templating import Jinja2Templates
 from pathlib import Path
 from api.database import get_db
 
-router = APIRouter(prefix="/ritual")
+router = APIRouter(prefix="")
 
 FRONTEND_DIR = Path(__file__).parent.parent.parent / "frontend"
 templates = Jinja2Templates(directory=str(FRONTEND_DIR / "templates"))
@@ -16,8 +16,8 @@ def _wants_html(request: Request) -> bool:
     return "text/html" in accept and not request.headers.get("hx-request")
 
 
-@router.get("/morning")
-async def morning_ritual(request: Request, db=Depends(get_db)):
+@router.get("/exposure")
+async def exposure_board(request: Request, db=Depends(get_db)):
     stale_canvases = [
         dict(r) for r in await db.execute_fetchall("SELECT * FROM stale_canvases")
     ]
@@ -84,7 +84,7 @@ async def morning_ritual(request: Request, db=Depends(get_db)):
         })
     stale_items.sort(key=lambda x: x["days_stale"], reverse=True)
 
-    return templates.TemplateResponse("ritual/morning.html", {
+    return templates.TemplateResponse("exposure/board.html", {
         "request": request,
         "today": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
         "stale_items": stale_items,
@@ -93,7 +93,7 @@ async def morning_ritual(request: Request, db=Depends(get_db)):
     })
 
 
-@router.post("/morning/staleness/{entity_type}/{entity_id}")
+@router.post("/exposure/staleness/{entity_type}/{entity_id}")
 async def confirm_staleness(entity_type: str, entity_id: str, db=Depends(get_db)):
     now = "strftime('%Y-%m-%dT%H:%M:%SZ', 'now')"
 
@@ -113,7 +113,7 @@ async def confirm_staleness(entity_type: str, entity_id: str, db=Depends(get_db)
     return {"status": "confirmed"}
 
 
-@router.post("/morning/position/{thesis_id}/clear")
+@router.post("/exposure/position/{thesis_id}/clear")
 async def clear_position(thesis_id: str, db=Depends(get_db)):
     now = "strftime('%Y-%m-%dT%H:%M:%SZ', 'now')"
     await db.execute(f"UPDATE thesis SET last_updated = {now} WHERE id = ?", (thesis_id,))
@@ -121,43 +121,29 @@ async def clear_position(thesis_id: str, db=Depends(get_db)):
     return {"status": "cleared"}
 
 
-# ─── EVENING ROUTING ──────────────────────────────────────────────────────────
-
-
-@router.get("/evening")
-async def evening_routing(request: Request, direct: int = 0, text: str = "", db=Depends(get_db)):
-    now_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-
-    if direct:
-        if not _wants_html(request):
-            return {"item": None, "total_count": 0, "direct_mode": True, "prefill_text": text}
-        return templates.TemplateResponse("ritual/evening.html", {
-            "request": request,
-            "item": None,
-            "total_count": 0,
-            "now_date": now_date,
-            "direct_mode": True,
-            "prefill_text": text,
-        })
-
-    count_rows = await db.execute_fetchall(
-        "SELECT COUNT(*) AS cnt FROM inbox WHERE routed_at IS NULL"
+@router.get("/exposure/counts")
+async def exposure_counts(db=Depends(get_db)):
+    stale_rows = await db.execute_fetchall(
+        """SELECT
+             (SELECT COUNT(*) FROM stale_canvases) +
+             (SELECT COUNT(*) FROM stale_theses) +
+             (SELECT COUNT(*) FROM stale_invalidation_conditions) AS cnt"""
     )
-    total_count = count_rows[0]["cnt"] if count_rows else 0
+    stale_count = dict(stale_rows[0])["cnt"] if stale_rows else 0
 
-    item_rows = await db.execute_fetchall(
-        "SELECT * FROM inbox WHERE routed_at IS NULL ORDER BY created_at ASC LIMIT 1"
+    position_rows = await db.execute_fetchall(
+        "SELECT COUNT(*) AS cnt FROM thesis WHERE status = 'active'"
     )
-    item = dict(item_rows[0]) if item_rows else None
+    position_count = dict(position_rows[0])["cnt"] if position_rows else 0
 
-    if not _wants_html(request):
-        return {"item": item, "total_count": total_count, "direct_mode": False, "prefill_text": ""}
+    action_rows = await db.execute_fetchall(
+        "SELECT COUNT(*) AS cnt FROM overdue_actions"
+    )
+    action_count = dict(action_rows[0])["cnt"] if action_rows else 0
 
-    return templates.TemplateResponse("ritual/evening.html", {
-        "request": request,
-        "item": item,
-        "total_count": total_count,
-        "now_date": now_date,
-        "direct_mode": False,
-        "prefill_text": "",
-    })
+    return {
+        "stale_count": stale_count,
+        "position_count": position_count,
+        "action_count": action_count,
+        "aggregate": stale_count + action_count,
+    }

@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% from "components/badge.html" import badge %}
+{% from "components/chip.html" import chip %}
+
+{% block title %}Insight / {{ insight.name or 'Insight' }}{% endblock %}
+
+{% block content %}
+
+    <button onclick="history.back()" class="btn-ghost btn-compact" style="margin-bottom: var(--space-2); color: var(--color-text-secondary)">&larr; Back</button>
+
+    <!-- Breadcrumb -->
+    <div class="breadcrumb" style="font-family: var(--font-ui); font-size: var(--text-xs);
+                color: var(--color-text-tertiary); margin-bottom: var(--space-2)">
+        <span>Insight</span>
+        <span class="breadcrumb-sep">/</span>
+        <span>{{ insight.name or 'Insight' }}</span>
+    </div>
+    <h1 style="font-family: var(--font-ui); font-size: var(--text-xl);
+               color: var(--color-text-primary); margin-bottom: var(--space-2)">
+        {{ insight.name or 'Insight' }}
+    </h1>
+    {% if insight.context_tag %}
+    <span class="chip" data-layer="learning"
+          style="border-color: var(--color-learning);
+                 background: var(--color-learning-bg);
+                 color: var(--color-learning-text)">
+        {{ insight.context_tag }}
+    </span>
+    {% endif %}
+    <div style="font-family: var(--font-data); font-size: var(--text-xs);
+                color: var(--color-text-tertiary); margin-top: var(--space-1)">
+        {{ insight.created_at }}
+    </div>
+
+    <!-- Note (read-only prose) -->
+    <div style="font-family: var(--font-prose); font-size: var(--text-base);
+                color: var(--color-text-primary); line-height: 1.6;
+                margin: var(--space-4) 0; white-space: pre-wrap">{{ insight.note }}</div>
+
+    <!-- Linked entity -->
+    {% if linked_entity %}
+    <div style="margin-top: var(--space-4); padding: var(--space-3);
+                border: 1px solid var(--color-learning);
+                border-radius: var(--radius-md);
+                background: var(--color-learning-bg)">
+        <div style="font-family: var(--font-ui); font-size: var(--text-xs);
+                    color: var(--color-learning-text); margin-bottom: var(--space-1)">
+            Linked to
+        </div>
+        <a href="/{{ insight.linked_entity_type }}/{{ insight.linked_entity_id }}"
+           style="font-family: var(--font-ui); font-size: var(--text-sm);
+                  color: var(--color-learning); text-decoration: none">
+            <span class="chip" data-layer="learning">{{ insight.linked_entity_type }}</span>
+            {{ linked_entity.display_name }}
+        </a>
+    </div>
+    {% endif %}
+
+{% endblock %}

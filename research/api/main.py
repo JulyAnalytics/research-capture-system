@@ -14,8 +14,8 @@ from api.routes.observation import router as observation_router
 from api.routes.review import router as review_router
 from api.routes.action import router as action_router
 from api.routes.ritual import router as ritual_router
-from api.routes.inbox import router as inbox_router
 from api.routes.entities import router as entities_router
+from api.routes.insight import router as insight_router
 from api.routes.images import router as images_router
 from db.init import init_schema
 from db.migrations.runner import run_pending
@@ -43,8 +43,8 @@ app.include_router(observation_router, prefix="/observation")
 app.include_router(review_router, prefix="/review")
 app.include_router(action_router, prefix="/action")
 app.include_router(ritual_router)
-app.include_router(inbox_router, prefix="/inbox")
 app.include_router(entities_router)
+app.include_router(insight_router, prefix="/insight", tags=["insight"])
 app.include_router(images_router)
 
 app.mount(

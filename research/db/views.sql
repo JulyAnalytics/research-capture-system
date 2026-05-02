@@ -220,3 +220,20 @@ JOIN entity_events e_close
 JOIN entity_events e_p2
     ON e_p2.entity_id = r.id AND e_p2.new_status = 'phase2'
 WHERE r.phase2_created_at IS NOT NULL;
+
+-- ─── INSIGHT ─────────────────────────────────────────────────────────────────
+
+DROP VIEW IF EXISTS recent_insights;
+CREATE VIEW recent_insights AS
+SELECT
+    i.id,
+    i.name,
+    i.note,
+    i.linked_entity_type,
+    i.linked_entity_id,
+    i.context_tag,
+    i.created_at,
+    -- Convenience: days since capture
+    CAST(julianday('now') - julianday(i.created_at) AS INTEGER) AS days_ago
+FROM insight i
+ORDER BY i.created_at DESC;

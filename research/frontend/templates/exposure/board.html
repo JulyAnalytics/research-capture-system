@@ -2,7 +2,7 @@
 {% from "components/badge.html" import badge %}
 {% from "components/table.html" import table_headers, table_row %}
 
-{% block title %}Morning ritual{% endblock %}
+{% block title %}Exposure board{% endblock %}
 
 {% block content %}
 <div x-data="{
@@ -14,7 +14,7 @@
 
     <!-- Page header -->
     <h1 style="font-family: var(--font-ui); font-size: var(--text-xl); font-weight: 500; margin-bottom: var(--space-1)">
-        Morning ritual
+        Exposure board
     </h1>
     <div style="font-family: var(--font-data); font-size: var(--text-sm); color: var(--color-text-secondary); margin-bottom: var(--space-8)">
         {{ today }}
@@ -47,7 +47,7 @@
                     </td>
                     <td>
                         <button class="btn btn-ghost btn-compact"
-                                hx-post="/ritual/morning/staleness/{{ item.entity_type }}/{{ item.id }}"
+                                hx-post="/exposure/staleness/{{ item.entity_type }}/{{ item.id }}"
                                 hx-swap="outerHTML"
                                 hx-target="closest tr">Confirm</button>
                     </td>
@@ -99,7 +99,7 @@
                     <td style="font-family: var(--font-data); font-size: var(--text-xs); color: var(--color-text-secondary)">{{ t.last_updated }}</td>
                     <td style="display: flex; gap: var(--space-2)">
                         <button class="btn btn-ghost btn-compact"
-                                hx-post="/ritual/morning/position/{{ t.id }}/clear"
+                                hx-post="/exposure/position/{{ t.id }}/clear"
                                 hx-swap="none">All clear</button>
                     </td>
                 </tr>
@@ -164,11 +164,11 @@
         </div>
     </div>
 
-    <!-- ── Ritual complete ─────────────────────────────────────── -->
+    <!-- ── Board complete ─────────────────────────────────────── -->
     <div x-show="ritualComplete" style="display: none; padding: var(--space-4) 0">
         <div style="display: flex; align-items: center; gap: var(--space-2)">
             <span style="display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: var(--color-active)"></span>
-            <span style="font-family: var(--font-ui); font-size: var(--text-base); color: var(--color-active)">Ritual complete</span>
+            <span style="font-family: var(--font-ui); font-size: var(--text-base); color: var(--color-active)">Board complete</span>
         </div>
     </div>
 
